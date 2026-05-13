@@ -2,6 +2,12 @@
 
 Playwright coverage for the resident ordering flow. All URL and credential values come from environment variables.
 
+For a non-technical scope summary, see:
+
+```text
+docs/TEST_SCOPE_NON_TECHNICAL.md
+```
+
 ## Scope
 
 Default coverage proves that a resident can:
