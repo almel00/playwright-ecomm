@@ -40,7 +40,8 @@ on:
         default: false
         type: boolean
   schedule:
-    - cron: '0 12 * * *'
+    # Runs once daily at 6:00 PM Philippines time (10:00 UTC).
+    - cron: '0 10 * * *'
 
 jobs:
   test:
