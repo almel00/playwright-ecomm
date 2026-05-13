@@ -154,6 +154,7 @@ async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
 
     await candidate.click();
     await waitForAppReady(page);
+    await failIfReturnedToLogin(page, text);
     if (await hasMenuSignals(page)) {
       console.log(`[order] Revenue center selected: ${text}`);
       return text;
@@ -173,12 +174,21 @@ async function selectMenu(page: Page, config: RuntimeConfig) {
 
     await candidate.click();
     await waitForAppReady(page);
+    await failIfReturnedToLogin(page, text);
     if (await hasItemSignals(page)) {
       console.log(`[order] Menu selected: ${text}`);
       return text;
     }
   }
   throw new Error('Could not find a visible menu with items.');
+}
+
+async function failIfReturnedToLogin(page: Page, clickedText: string) {
+  const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+  const url = page.url().toLowerCase();
+  if (url.includes('/login') || bodyText.includes('please enter your pin') || bodyText.includes('first name')) {
+    throw new Error(`Clicked "${clickedText}" while selecting ordering content, but the app returned to login/PIN. This control is not a revenue center/menu.`);
+  }
 }
 
 async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: number): Promise<Locator> {
@@ -295,11 +305,41 @@ async function visibleChoiceCandidates(page: Page) {
   const candidates: Locator[] = [];
   for (let index = 0; index < count; index += 1) {
     const candidate = locator.nth(index);
-    if (await isVisible(candidate, 500)) {
+    if (await isVisible(candidate, 500) && !(await isNonOrderingControl(candidate))) {
       candidates.push(candidate);
     }
   }
   return candidates;
+}
+
+async function isNonOrderingControl(locator: Locator) {
+  return locator.evaluate((element) => {
+    const text = (element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const aria = (element.getAttribute('aria-label') || '').toLowerCase();
+    const title = (element.getAttribute('title') || '').toLowerCase();
+    const className = String((element as HTMLElement).className || '').toLowerCase();
+    const combined = `${text} ${aria} ${title} ${className}`;
+    const rect = (element as HTMLElement).getBoundingClientRect();
+    const style = window.getComputedStyle(element as HTMLElement);
+
+    if (!text && !aria && !title) {
+      return true;
+    }
+
+    if (combined.match(/logout|log out|sign out|not .*ava|forgot|change pin|profile|privacy|terms|checkout|cart|transaction|font size|accessibility|zoom|drawer|menu button/)) {
+      return true;
+    }
+
+    if (className.includes('muifab-root') || className.includes('fab')) {
+      return true;
+    }
+
+    if ((style.position === 'fixed' || style.position === 'sticky') && (rect.bottom > window.innerHeight - 160 || rect.left < 120)) {
+      return true;
+    }
+
+    return false;
+  }).catch(() => true);
 }
 
 async function hasMenuSignals(page: Page) {
@@ -320,7 +360,7 @@ async function hasItemSignals(page: Page) {
 }
 
 function isChromeOrActionText(text: string) {
-  return /login|logout|log out|not .*ava|forgot|change pin|privacy|terms|checkout|cart|profile|transactions|in-?room ordering|^menu$|close|ok/i.test(text);
+  return /login|logout|log out|sign out|not .*ava|forgot|change pin|privacy|terms|checkout|cart|profile|transactions|font size|accessibility|in-?room ordering|^menu$|close|ok/i.test(text);
 }
 
 function dedupeModifiers(modifiers: ModifierSummary[]) {
