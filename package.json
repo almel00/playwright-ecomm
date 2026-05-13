@@ -9,7 +9,7 @@
     "test:coverage": "playwright test tests/auth.spec.ts tests/menu-coverage.spec.ts",
     "test:all": "playwright test",
     "test:profile": "playwright test",
-    "report": "playwright show-report"
+    "report": "node scripts/show-latest-report.js"
   },
   "devDependencies": {
     "playwright": "^1.57.0"

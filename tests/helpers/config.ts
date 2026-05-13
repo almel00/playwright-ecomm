@@ -1,6 +1,13 @@
 export type SelectionMode = 'first' | 'random';
 
 export type RuntimeConfig = {
+  siteName: string;
+  siteSlug: string;
+  baseUrl: string;
+  envFile: string;
+  reportDate: string;
+  reportRunId: string;
+  reportDir: string;
   selectionMode: SelectionMode;
   targetRevenueCenter?: string;
   targetMenu?: string;
@@ -17,6 +24,13 @@ export type RuntimeConfig = {
 
 export function getRuntimeConfig(): RuntimeConfig {
   return {
+    siteName: process.env.REPORT_SITE_NAME || process.env.SITE_NAME || new URL(requiredEnv('BASE_URL')).hostname,
+    siteSlug: process.env.REPORT_SITE_SLUG || 'unknown-site',
+    baseUrl: requiredEnv('BASE_URL'),
+    envFile: process.env.ENV_FILE || '.env',
+    reportDate: process.env.REPORT_DATE || new Date().toISOString().slice(0, 10),
+    reportRunId: process.env.REPORT_RUN_ID || 'local-run',
+    reportDir: process.env.REPORT_DIR || 'test-results',
     selectionMode: selectionModeFromEnv(),
     targetRevenueCenter: optionalEnv('TARGET_REVENUE_CENTER'),
     targetMenu: optionalEnv('TARGET_MENU'),

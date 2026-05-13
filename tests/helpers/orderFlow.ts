@@ -46,6 +46,13 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   console.log('[checkout] Capturing subtotal, tax, and total');
   const summary = await extractCheckoutSummary(page, {
     runId,
+    siteName: config.siteName,
+    siteSlug: config.siteSlug,
+    baseUrl: config.baseUrl,
+    envFile: config.envFile,
+    reportDate: config.reportDate,
+    reportRunId: config.reportRunId,
+    reportDir: config.reportDir,
     selectionMode: config.selectionMode,
     revenueCenterName,
     menuName,

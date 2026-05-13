@@ -16,6 +16,13 @@ export type ItemSummary = {
 export type OrderSummary = {
   runId: string;
   timestamp: string;
+  siteName: string;
+  siteSlug: string;
+  baseUrl: string;
+  envFile: string;
+  reportDate: string;
+  reportRunId: string;
+  reportDir: string;
   selectionMode: string;
   revenueCenterName: string;
   menuName: string;
@@ -45,6 +52,13 @@ export async function extractCheckoutSummary(
   page: Page,
   details: {
     runId: string;
+    siteName: string;
+    siteSlug: string;
+    baseUrl: string;
+    envFile: string;
+    reportDate: string;
+    reportRunId: string;
+    reportDir: string;
     selectionMode: string;
     revenueCenterName: string;
     menuName: string;
@@ -65,6 +79,13 @@ export async function extractCheckoutSummary(
   const summary: OrderSummary = {
     runId: details.runId,
     timestamp: new Date().toISOString(),
+    siteName: details.siteName,
+    siteSlug: details.siteSlug,
+    baseUrl: details.baseUrl,
+    envFile: details.envFile,
+    reportDate: details.reportDate,
+    reportRunId: details.reportRunId,
+    reportDir: details.reportDir,
     selectionMode: details.selectionMode,
     revenueCenterName: details.revenueCenterName,
     menuName: details.menuName,
@@ -113,9 +134,17 @@ export function compareSummaries(checkout: OrderSummary, transaction: OrderSumma
 }
 
 export async function saveOrderSummary(summary: OrderSummary) {
-  const filePath = path.resolve(process.cwd(), 'test-results', 'order-summary.json');
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(summary, null, 2));
+  const latestPath = path.resolve(process.cwd(), 'test-results', 'order-summary.json');
+  const runPath = path.resolve(summary.reportDir, 'order-summary.json');
+  const dailyIndexPath = path.resolve(process.cwd(), 'test-results', 'reports', summary.siteSlug, summary.reportDate, 'runs.jsonl');
+
+  for (const filePath of [latestPath, runPath, dailyIndexPath]) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  }
+
+  fs.writeFileSync(latestPath, JSON.stringify(summary, null, 2));
+  fs.writeFileSync(runPath, JSON.stringify(summary, null, 2));
+  fs.appendFileSync(dailyIndexPath, `${JSON.stringify(summary)}\n`);
 }
 
 export function parseTransactionSummary(text: string, checkout: OrderSummary): OrderSummary {
@@ -127,6 +156,13 @@ export function parseTransactionSummary(text: string, checkout: OrderSummary): O
   return {
     runId: checkout.runId,
     timestamp: new Date().toISOString(),
+    siteName: checkout.siteName,
+    siteSlug: checkout.siteSlug,
+    baseUrl: checkout.baseUrl,
+    envFile: checkout.envFile,
+    reportDate: checkout.reportDate,
+    reportRunId: checkout.reportRunId,
+    reportDir: checkout.reportDir,
     selectionMode: checkout.selectionMode,
     revenueCenterName: checkout.revenueCenterName,
     menuName: checkout.menuName,

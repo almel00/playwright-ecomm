@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 loadDotEnv(resolveEnvFile());
+const reportInfo = createReportInfo();
 
 export default defineConfig({
   testDir: './tests',
@@ -15,7 +16,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['html', { outputFolder: path.join(reportInfo.reportDir, 'html'), open: 'never' }],
   ],
   use: {
     baseURL: requiredEnv('BASE_URL'),
@@ -33,7 +34,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  outputDir: 'test-results/artifacts',
+  outputDir: path.join(reportInfo.reportDir, 'artifacts'),
 });
 
 function loadDotEnv(filePath: string) {
@@ -71,6 +72,33 @@ function resolveEnvFile() {
   }
 
   return path.resolve(__dirname, envFile);
+}
+
+function createReportInfo() {
+  const baseUrl = requiredEnv('BASE_URL');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const date = timestamp.slice(0, 10);
+  const siteName = process.env.SITE_NAME || new URL(baseUrl).hostname;
+  const siteSlug = slugify(siteName);
+  const runId = process.env.REPORT_RUN_ID || `${date}-${timestamp.slice(11, 19)}-${Math.random().toString(36).slice(2, 8)}`;
+  const reportDir = path.resolve(__dirname, 'test-results', 'reports', siteSlug, date, runId);
+
+  process.env.REPORT_SITE_NAME = siteName;
+  process.env.REPORT_SITE_SLUG = siteSlug;
+  process.env.REPORT_DATE = date;
+  process.env.REPORT_RUN_ID = runId;
+  process.env.REPORT_DIR = reportDir;
+
+  return { siteName, siteSlug, date, runId, reportDir };
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'unknown-site';
 }
 
 function requiredEnv(name: string) {

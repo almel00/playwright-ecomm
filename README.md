@@ -154,7 +154,43 @@ Latest order summary:
 test-results/order-summary.json
 ```
 
-The summary includes selected revenue center, menu, item, modifiers, subtotal, tax, total, kitchen message, order id when visible, selection mode, and transaction comparison status.
+The summary includes site name, base URL, env profile, report folder, selected revenue center, menu, item, modifiers, subtotal, tax, total, kitchen message, order id when visible, selection mode, and transaction comparison status.
+
+## Daily Reports
+
+Each run writes report artifacts under a site/date/run folder:
+
+```text
+test-results/reports/<site>/<yyyy-mm-dd>/<run-id>/
+```
+
+Example:
+
+```text
+test-results/reports/abcseniorliving-servingintel-app/2026-05-13/2026-05-13-05-18-22-a1b2c3/
+```
+
+Inside each run folder:
+
+```text
+html/
+artifacts/
+order-summary.json
+```
+
+Each site/date also gets a daily JSONL index:
+
+```text
+test-results/reports/<site>/<yyyy-mm-dd>/runs.jsonl
+```
+
+Use `SITE_NAME` in `.env` or profile files when you want a friendly report label:
+
+```text
+SITE_NAME=ABC Senior Living
+```
+
+If `SITE_NAME` is blank, the report uses the `BASE_URL` hostname.
 
 ## Reports
 
@@ -171,6 +207,8 @@ Open the HTML report:
 ```powershell
 npm run report
 ```
+
+That opens the latest generated nested HTML report.
 
 ## CI
 
