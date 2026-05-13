@@ -25,7 +25,6 @@ test('mobile resident menu navigation renders without layout-blocking failures',
   await loginResident(page, residentCredentials());
   await openDynamicMenu(page, config);
   await expectVisiblePricedItem(page);
-  await logoutResident(page);
 });
 
 test('sold-out or unavailable menu items are not selected when present', async ({ page }) => {
