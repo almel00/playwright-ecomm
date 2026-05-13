@@ -25,7 +25,7 @@ Additional specs cover login/logout, invalid login, item search, mobile menu nav
 npm install
 ```
 
-Create `.env` from the example:
+Create `.env` from the example for your default local site:
 
 ```powershell
 Copy-Item .env.example .env
@@ -42,6 +42,48 @@ RESIDENT_PIN=
 ```
 
 Do not commit `.env`.
+
+## Environment Profiles
+
+Use environment profiles when testing multiple ecomm URLs with different resident credentials.
+
+Create a profile from the template:
+
+```powershell
+Copy-Item .env.profile.example .env.abc
+notepad .env.abc
+```
+
+Example profile:
+
+```text
+BASE_URL=https://example.servingintel.app/
+RESIDENT_FIRST_NAME=Oliver
+RESIDENT_ROOM=R123
+RESIDENT_PIN=1234
+SELECTION_MODE=first
+TARGET_REVENUE_CENTER=
+TARGET_MENU=
+TARGET_ITEM=
+```
+
+Run with that profile:
+
+```powershell
+$env:ENV_FILE='.env.abc'
+npm run test:resident-ordering
+```
+
+Run another site by changing only `ENV_FILE`:
+
+```powershell
+$env:ENV_FILE='.env.client-a'
+npm run test:resident-ordering
+```
+
+If `ENV_FILE` is not set, Playwright loads `.env`.
+
+Profile files such as `.env.abc` and `.env.client-a` are ignored by git. Only `.env.example` and `.env.profile.example` are committed.
 
 ## Selection Controls
 
@@ -132,7 +174,7 @@ npm run report
 
 ## CI
 
-GitHub Actions is configured in `.github/workflows/playwright.yml`. Add these repository secrets:
+GitHub Actions is configured in `.github/workflows/playwright.yml`. Add these repository secrets for the default CI target:
 
 ```text
 BASE_URL
@@ -142,3 +184,5 @@ RESIDENT_PIN
 ```
 
 The CI workflow runs the main resident ordering test and uploads Playwright artifacts.
+
+For multiple CI targets, create separate GitHub environments or duplicate workflow jobs with different secret sets, for example `abc`, `client-a`, and `client-b`.

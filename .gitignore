@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+!.env.profile.example
 node_modules/
 .playwright-mcp/
 playwright-report/

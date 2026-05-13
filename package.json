@@ -8,6 +8,7 @@
     "test:resident-ordering": "playwright test tests/resident-ordering.spec.ts",
     "test:coverage": "playwright test tests/auth.spec.ts tests/menu-coverage.spec.ts",
     "test:all": "playwright test",
+    "test:profile": "playwright test",
     "report": "playwright show-report"
   },
   "devDependencies": {

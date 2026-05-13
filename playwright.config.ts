@@ -2,7 +2,7 @@ import { defineConfig, devices } from 'playwright/test';
 import fs from 'fs';
 import path from 'path';
 
-loadDotEnv(path.resolve(__dirname, '.env'));
+loadDotEnv(resolveEnvFile());
 
 export default defineConfig({
   testDir: './tests',
@@ -62,6 +62,15 @@ function loadDotEnv(filePath: string) {
       process.env[key] = value;
     }
   }
+}
+
+function resolveEnvFile() {
+  const envFile = process.env.ENV_FILE || '.env';
+  if (path.isAbsolute(envFile)) {
+    return envFile;
+  }
+
+  return path.resolve(__dirname, envFile);
 }
 
 function requiredEnv(name: string) {
