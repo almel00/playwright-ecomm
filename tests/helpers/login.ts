@@ -58,7 +58,12 @@ export async function logoutResident(page: Page) {
     if (await isVisible(namedLogout, 1_000)) {
       await namedLogout.click();
     } else {
-      await clickLowerLeftIconButton(page);
+      const clicked = await clickLowerLeftIconButton(page);
+      if (!clicked) {
+        console.log('[logout] Logout icon was not visible; clearing browser session as cleanup fallback');
+        await clearSessionAndOpenLogin(page);
+        break;
+      }
     }
 
     await waitForAppReady(page);
@@ -180,6 +185,7 @@ async function clickLowerLeftIconButton(page: Page) {
   const count = await buttons.count();
   let selectedBox: { x: number; y: number; width: number; height: number } | null = null;
   let selectedScore = Number.NEGATIVE_INFINITY;
+  const viewport = page.viewportSize() ?? { width: 1920, height: 1080 };
 
   for (let index = 0; index < count; index += 1) {
     const button = buttons.nth(index);
@@ -188,11 +194,17 @@ async function clickLowerLeftIconButton(page: Page) {
     }
 
     const box = await button.boundingBox().catch(() => null);
-    if (!box || box.x > 180) {
+    if (!box) {
       continue;
     }
 
-    const score = box.y - box.x;
+    const isLeftSide = box.x < viewport.width * 0.45;
+    const isLowerHalf = box.y > viewport.height * 0.35;
+    if (!isLeftSide || !isLowerHalf) {
+      continue;
+    }
+
+    const score = box.y - box.x + (box.x < viewport.width * 0.2 ? 500 : 0);
     if (score > selectedScore) {
       selectedScore = score;
       selectedBox = box;
@@ -200,10 +212,21 @@ async function clickLowerLeftIconButton(page: Page) {
   }
 
   if (!selectedBox) {
-    throw new Error('Could not find lower-left logout icon button.');
+    return false;
   }
 
   await page.mouse.click(selectedBox.x + selectedBox.width / 2, selectedBox.y + selectedBox.height / 2);
+  return true;
+}
+
+async function clearSessionAndOpenLogin(page: Page) {
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  }).catch(() => {});
+  await page.context().clearCookies().catch(() => {});
+  await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
 }
 
 async function visibleCount(locator: ReturnType<Page['locator']>) {
