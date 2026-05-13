@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test';
+import { expect, test } from '@playwright/test';
 import { getRuntimeConfig, residentCredentials } from './helpers/config';
 import { loginResident, logoutResident } from './helpers/login';
 import { openDynamicMenu, selectSearchResultIfAvailable } from './helpers/orderFlow';

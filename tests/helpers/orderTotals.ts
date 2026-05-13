@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { expect, type Locator, type Page } from 'playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export type ModifierSummary = {
   name: string;

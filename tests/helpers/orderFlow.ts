@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from 'playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { getRuntimeConfig, type RuntimeConfig } from './config';
 import { compact, extractCheckoutSummary, extractItemNameAndPrice, moneyFromText, parseTransactionSummary, type ItemSummary, type ModifierSummary, type OrderSummary } from './orderTotals';
 import { dismissOptionalDialog, isVisible, waitForAppReady } from './login';

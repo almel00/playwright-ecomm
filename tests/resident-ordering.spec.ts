@@ -1,4 +1,4 @@
-import { test } from 'playwright/test';
+import { test } from '@playwright/test';
 import { loginResident, logoutResident } from './helpers/login';
 import { completeOrderingFlow, verifyTransaction } from './helpers/orderFlow';
 import { getRuntimeConfig, residentCredentials } from './helpers/config';

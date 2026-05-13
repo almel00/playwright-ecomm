@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test';
+import { expect, test } from '@playwright/test';
 import { getRuntimeConfig, residentCredentials } from './helpers/config';
 import { dismissOptionalDialog, loginResident, logoutResident, waitForAppReady } from './helpers/login';
 

@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test';
+import { expect, test } from '@playwright/test';
 import { getRuntimeConfig, residentCredentials } from './helpers/config';
 import { loginResident } from './helpers/login';
 import { completeOrderingFlow } from './helpers/orderFlow';
