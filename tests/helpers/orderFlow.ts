@@ -159,7 +159,7 @@ async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
     await waitForAppReady(page);
     await failIfReturnedToLogin(page, revenueName);
 
-    if (await hasItemSignals(page)) {
+    if (await findPricedItemsWithScroll(page)) {
       console.log(`[order] Revenue center selected with direct items: ${revenueName}`);
       return { revenueCenterName: revenueName, menuName: 'Direct menu' };
     }
@@ -189,7 +189,7 @@ async function chooseMenuOnCurrentPage(page: Page, config: RuntimeConfig, revenu
     await waitForAppReady(page);
     await failIfReturnedToLogin(page, menuName);
 
-    if (await hasItemSignals(page)) {
+    if (await findPricedItemsWithScroll(page)) {
       console.log(`[order] Revenue center selected: ${revenueCenterName}`);
       console.log(`[order] Menu selected: ${menuName}`);
       return { revenueCenterName, menuName };
@@ -272,6 +272,7 @@ async function failIfReturnedToLogin(page: Page, clickedText: string) {
 }
 
 async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: number): Promise<Locator> {
+  await findPricedItemsWithScroll(page);
   const itemCards = page.locator('[data-testid*="item" i], [aria-label*="$"], .MuiCard-root', { hasText: /\$\s*\d/ });
   const candidates: Locator[] = [];
   const count = await itemCards.count();
@@ -284,10 +285,10 @@ async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: nu
   }
 
   if (candidates.length === 0) {
-    const pricedText = page.getByText(/\$\s*\d/).first();
-    await expect(pricedText).toBeVisible();
-    return pricedText;
-  }
+  const pricedText = page.getByText(/\$\s*\d/).first();
+  await expect(pricedText).toBeVisible();
+  return pricedText;
+}
 
   const ordered = await orderCandidates(candidates, config, config.targetItem);
   return ordered[Math.min(offset, ordered.length - 1)];
@@ -483,7 +484,48 @@ async function hasMenuSignals(page: Page) {
 }
 
 async function hasItemSignals(page: Page) {
-  return await page.locator('body').getByText(/\$\s*\d/).first().isVisible({ timeout: 3_000 }).catch(() => false);
+  const text = await page.locator('body').innerText().catch(() => '');
+  return /\$\s*\d/.test(text) || await page.locator('body').getByText(/\$\s*\d/).first().isVisible({ timeout: 1_000 }).catch(() => false);
+}
+
+async function findPricedItemsWithScroll(page: Page) {
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
+  await waitForAppReady(page);
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (await hasItemSignals(page)) {
+      const visiblePrice = page.getByText(/\$\s*\d/).first();
+      if (await isVisible(visiblePrice, 500)) {
+        return true;
+      }
+
+      await visiblePrice.scrollIntoViewIfNeeded().catch(() => {});
+      await waitForAppReady(page);
+      if (await isVisible(visiblePrice, 500)) {
+        return true;
+      }
+    }
+
+    const scrollState = await page.evaluate(() => {
+      const before = window.scrollY;
+      window.scrollBy(0, Math.max(500, window.innerHeight * 0.75));
+      return {
+        before,
+        after: window.scrollY,
+        max: document.documentElement.scrollHeight - window.innerHeight,
+      };
+    }).catch(() => ({ before: 0, after: 0, max: 0 }));
+
+    await waitForAppReady(page);
+    if (scrollState.after === scrollState.before || scrollState.after >= scrollState.max) {
+      if (await hasItemSignals(page)) {
+        return true;
+      }
+      return false;
+    }
+  }
+
+  return hasItemSignals(page);
 }
 
 function isChromeOrActionText(text: string) {
