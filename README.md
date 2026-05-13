@@ -148,7 +148,7 @@ Watch the browser locally:
 npm run test:resident-ordering -- --headed --slow-mo=500
 ```
 
-Headed Chromium starts maximized with a `1920x1080` window size. The app is also zoomed to `BROWSER_ZOOM=0.67` by default, which matches the recommended manual Chrome zoom for this UI.
+Headed Chromium starts maximized with a `1920x1080` window size and a browser scale factor tuned for this UI.
 
 Keep the browser open for step-by-step debugging:
 

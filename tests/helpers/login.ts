@@ -52,10 +52,8 @@ export async function dismissOptionalDialog(page: Page) {
 
 export async function waitForAppReady(page: Page) {
   await page.waitForLoadState('domcontentloaded').catch(() => {});
-  await applyBrowserZoom(page);
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
   await page.locator('[role="progressbar"], .MuiCircularProgress-root').first().waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
-  await applyBrowserZoom(page);
   await page.waitForTimeout(500);
 }
 
@@ -91,18 +89,6 @@ async function enterPin(page: Page, pin: string) {
   }
 
   await expect(pinInput).toHaveValue(pin, { timeout: 5_000 });
-}
-
-async function applyBrowserZoom(page: Page) {
-  const zoom = Number(process.env.BROWSER_ZOOM || '0.67');
-  if (!Number.isFinite(zoom) || zoom <= 0) {
-    return;
-  }
-
-  await page.evaluate((value) => {
-    document.documentElement.style.zoom = String(value);
-    document.body.style.zoom = String(value);
-  }, zoom).catch(() => {});
 }
 
 async function expectResidentOrderingReady(page: Page) {

@@ -73,8 +73,10 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
 
 export async function verifyTransaction(page: Page, checkoutSummary: OrderSummary): Promise<OrderSummary> {
   console.log('[transactions] Opening My Transactions');
+  await resetAppZoom(page);
   await navigateByText(page, /my transactions/i);
   await waitForAppReady(page);
+  await resetAppZoom(page);
 
   console.log('[transactions] Opening latest matching transaction');
   const row = page.locator('tr', { hasText: String(Math.trunc(checkoutSummary.total)) }).first();
@@ -354,9 +356,24 @@ async function openCheckout(page: Page) {
 }
 
 async function addKitchenMessage(page: Page, message: string) {
-  const input = page.getByRole('textbox', { name: /special instructions|kitchen|message/i }).first();
-  await expect(input).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+  await waitForAppReady(page);
+
+  const input = page
+    .getByRole('textbox', { name: /special instructions|kitchen|message|comment|note/i })
+    .or(page.locator('textarea[placeholder*="instruction" i], textarea[placeholder*="message" i], textarea[placeholder*="note" i]'))
+    .or(page.locator('input[placeholder*="instruction" i], input[placeholder*="message" i], input[placeholder*="note" i]'))
+    .first();
+
+  await expect(input, 'Kitchen/special instructions field should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
+  await input.scrollIntoViewIfNeeded();
   await input.fill(message);
+  await expect(input).toHaveValue(message);
+
+  const checkoutText = await page.locator('body').innerText().catch(() => '');
+  if (!checkoutText.includes(message)) {
+    console.log('[checkout] Kitchen message field filled; message may not render as static text until transaction view');
+  }
 }
 
 async function choosePaymentIfNeeded(page: Page) {
@@ -526,6 +543,13 @@ async function findPricedItemsWithScroll(page: Page) {
   }
 
   return hasItemSignals(page);
+}
+
+async function resetAppZoom(page: Page) {
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = '';
+    document.body.style.zoom = '';
+  }).catch(() => {});
 }
 
 function isChromeOrActionText(text: string) {

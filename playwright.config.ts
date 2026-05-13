@@ -25,9 +25,9 @@ export default defineConfig({
     trace: 'on-first-retry',
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
-    viewport: null,
+    viewport: { width: 1920, height: 1080 },
     launchOptions: {
-      args: ['--start-maximized', '--window-size=1920,1080', '--window-position=0,0'],
+      args: ['--start-maximized', '--window-size=1920,1080', '--window-position=0,0', '--force-device-scale-factor=0.67'],
     },
     locale: 'en-US',
   },
