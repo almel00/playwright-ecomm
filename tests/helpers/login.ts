@@ -18,9 +18,7 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await waitForAppReady(page);
 
   console.log('[login] Entering PIN');
-  const pinInput = page.getByRole('textbox', { name: /enter pin|pin/i }).or(page.locator('input[type="password"]')).first();
-  await expect(pinInput).toBeVisible();
-  await pinInput.fill(credentials.pin);
+  await enterPin(page, credentials.pin);
   await page.getByRole('button', { name: /^login$/i }).click();
   await waitForAppReady(page);
 
@@ -66,6 +64,31 @@ export async function isVisible(locator: ReturnType<Page['locator']>, timeout = 
   } catch {
     return false;
   }
+}
+
+async function enterPin(page: Page, pin: string) {
+  const pinInput = page
+    .locator('input[name*="pin" i], input[id*="pin" i], input[aria-label*="pin" i], input[type="password"], input')
+    .last();
+
+  await expect(pinInput).toBeVisible({ timeout: 15_000 });
+  await pinInput.scrollIntoViewIfNeeded();
+  await pinInput.click();
+  await pinInput.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A').catch(() => {});
+  await pinInput.fill('');
+  await pinInput.type(pin, { delay: 75 });
+
+  const currentValue = await pinInput.inputValue().catch(() => '');
+  if (currentValue !== pin) {
+    await pinInput.evaluate((element, value) => {
+      const input = element as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, pin);
+  }
+
+  await expect(pinInput).toHaveValue(pin, { timeout: 5_000 });
 }
 
 async function expectResidentOrderingReady(page: Page) {

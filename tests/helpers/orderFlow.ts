@@ -15,6 +15,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   console.log('[order] Detecting revenue centers or direct menu view');
+  await assertNotOnPinScreen(page);
   const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
 
   console.log('[order] Selecting a menu dynamically');
@@ -111,9 +112,17 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
 }
 
 export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRuntimeConfig()) {
+  await assertNotOnPinScreen(page);
   const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
   const menuName = await selectMenu(page, config);
   return { revenueCenterName, menuName };
+}
+
+async function assertNotOnPinScreen(page: Page) {
+  const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+  if (bodyText.includes('please enter your pin') || bodyText.includes('enter pin')) {
+    throw new Error('Expected resident ordering screen, but the app is still on the PIN login page. Verify RESIDENT_PIN and PIN input handling.');
+  }
 }
 
 export async function selectSearchResultIfAvailable(page: Page, searchText?: string) {
