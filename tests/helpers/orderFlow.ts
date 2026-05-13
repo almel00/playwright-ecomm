@@ -177,6 +177,14 @@ async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
     throw new Error('Could not find revenue center cards or direct menus.');
   }
 
+  if (config.selectionMode === 'random' && !config.targetRevenueCenter && !config.targetMenu) {
+    const randomSelection = await selectRandomRevenueCenterAndMenu(page, config, revenueNames, startingUrl);
+    if (randomSelection) {
+      return randomSelection;
+    }
+    console.log('[order] Random path discovery did not find a viable path; falling back to first valid path search');
+  }
+
   for (const revenueName of revenueNames) {
     await returnToRevenueCenterList(page, revenueNames, startingUrl);
     if (!(await clickCardByName(page, revenueName))) {
@@ -200,6 +208,88 @@ async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
   }
 
   throw new Error(`Could not find a revenue center/menu path with priced items. Tried: ${revenueNames.join(', ')}`);
+}
+
+type RandomMenuPath = {
+  revenueCenterName: string;
+  menuName: string;
+  itemCount: number;
+};
+
+async function selectRandomRevenueCenterAndMenu(page: Page, config: RuntimeConfig, revenueNames: string[], startingUrl: string) {
+  const paths: RandomMenuPath[] = [];
+
+  for (const revenueName of revenueNames) {
+    await returnToRevenueCenterList(page, revenueNames, startingUrl);
+    if (!(await clickCardByName(page, revenueName))) {
+      continue;
+    }
+    await waitForAppReady(page);
+    await failIfReturnedToLogin(page, revenueName);
+
+    const directItemCount = await countAvailableItemsAfterScroll(page);
+    if (directItemCount > 0) {
+      paths.push({ revenueCenterName: revenueName, menuName: 'Direct menu', itemCount: directItemCount });
+      console.log(`[order] Random candidate path: ${revenueName} / Direct menu (${directItemCount} priced item${directItemCount === 1 ? '' : 's'})`);
+      continue;
+    }
+
+    const menuNames = orderNames(await visibleCardNames(page), config, config.targetMenu);
+    const menuStartUrl = page.url();
+    console.log(`[order] Random menu candidates for ${revenueName}: ${menuNames.join(' | ') || '(none)'}`);
+
+    for (const menuName of menuNames) {
+      await returnToMenuList(page, menuNames, menuStartUrl);
+      if (!(await clickCardByName(page, menuName))) {
+        continue;
+      }
+      await waitForAppReady(page);
+      await failIfReturnedToLogin(page, menuName);
+
+      const itemCount = await countAvailableItemsAfterScroll(page);
+      if (itemCount > 0) {
+        paths.push({ revenueCenterName: revenueName, menuName, itemCount });
+        console.log(`[order] Random candidate path: ${revenueName} / ${menuName} (${itemCount} priced item${itemCount === 1 ? '' : 's'})`);
+      }
+    }
+  }
+
+  if (paths.length === 0) {
+    await returnToRevenueCenterList(page, revenueNames, startingUrl);
+    return null;
+  }
+
+  const maxItemCount = Math.max(...paths.map((path) => path.itemCount));
+  const preferredPaths = paths.filter((path) => path.itemCount > 1);
+  const eligiblePaths = preferredPaths.length > 0 ? preferredPaths : paths.filter((path) => path.itemCount === maxItemCount);
+  const selected = shuffle(eligiblePaths)[0];
+
+  console.log(`[order] Random mode selected path: ${selected.revenueCenterName} / ${selected.menuName} (${selected.itemCount} priced item${selected.itemCount === 1 ? '' : 's'})`);
+  await openMenuPath(page, selected, revenueNames, startingUrl);
+  return { revenueCenterName: selected.revenueCenterName, menuName: selected.menuName };
+}
+
+async function openMenuPath(page: Page, selected: RandomMenuPath, revenueNames: string[], startingUrl: string) {
+  await returnToRevenueCenterList(page, revenueNames, startingUrl);
+  await expect(async () => {
+    if (!(await clickCardByName(page, selected.revenueCenterName))) {
+      throw new Error(`Could not reopen revenue center "${selected.revenueCenterName}".`);
+    }
+  }).toPass({ timeout: 10_000 });
+  await waitForAppReady(page);
+
+  if (selected.menuName === 'Direct menu') {
+    await findPricedItemsWithScroll(page);
+    return;
+  }
+
+  await expect(async () => {
+    if (!(await clickCardByName(page, selected.menuName))) {
+      throw new Error(`Could not reopen menu "${selected.menuName}".`);
+    }
+  }).toPass({ timeout: 10_000 });
+  await waitForAppReady(page);
+  await findPricedItemsWithScroll(page);
 }
 
 async function chooseMenuOnCurrentPage(page: Page, config: RuntimeConfig, revenueCenterName: string) {
@@ -299,6 +389,23 @@ async function failIfReturnedToLogin(page: Page, clickedText: string) {
 
 async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: number): Promise<Locator> {
   await findPricedItemsWithScroll(page);
+  const candidates = await availableItemCandidates(page);
+
+  if (candidates.length === 0) {
+    const pricedText = page.getByText(/\$\s*\d/).first();
+    await expect(pricedText).toBeVisible();
+    return pricedText;
+  }
+
+  const ordered = await orderCandidates(candidates, config, config.targetItem);
+  if (config.selectionMode === 'random' && !config.targetItem) {
+    const { itemName } = await extractItemNameAndPrice(ordered[Math.min(offset, ordered.length - 1)]);
+    console.log(`[order] Random mode selected item candidate: ${itemName}`);
+  }
+  return ordered[Math.min(offset, ordered.length - 1)];
+}
+
+async function availableItemCandidates(page: Page) {
   const itemCards = page.locator('[data-testid*="item" i], [aria-label*="$"], .MuiCard-root', { hasText: /\$\s*\d/ });
   const candidates: Locator[] = [];
   const count = await itemCards.count();
@@ -309,15 +416,14 @@ async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: nu
       candidates.push(item);
     }
   }
-
-  if (candidates.length === 0) {
-  const pricedText = page.getByText(/\$\s*\d/).first();
-  await expect(pricedText).toBeVisible();
-  return pricedText;
+  return candidates;
 }
 
-  const ordered = await orderCandidates(candidates, config, config.targetItem);
-  return ordered[Math.min(offset, ordered.length - 1)];
+async function countAvailableItemsAfterScroll(page: Page) {
+  if (!(await findPricedItemsWithScroll(page))) {
+    return 0;
+  }
+  return (await availableItemCandidates(page)).length;
 }
 
 async function visibleItemName(page: Page) {
