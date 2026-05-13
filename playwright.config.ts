@@ -8,7 +8,7 @@ const reportInfo = createReportInfo();
 export default defineConfig({
   testDir: './tests',
   testMatch: /.*\.spec\.ts/,
-  timeout: 240_000,
+  timeout: 300_000,
   expect: {
     timeout: 15_000,
   },

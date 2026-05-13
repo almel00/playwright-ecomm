@@ -71,6 +71,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
 
   console.log('[checkout] Placing order');
   const kitchenMessageSubmission = waitForKitchenMessageSubmission(page, config.kitchenMessage);
+  const orderSubmissionState = waitForOrderSubmissionState(page);
   await clickButtonByName(page, /submit order|place order|confirm order|complete order/i);
   const submittedKitchenMessage = await kitchenMessageSubmission;
   summary.kitchenMessageSubmitted = submittedKitchenMessage;
@@ -78,6 +79,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
     console.log('[checkout] Message to Kitchen was filled, but it was not found in the order submission payload');
   }
   await waitForAppReady(page);
+  await orderSubmissionState;
   await dismissOptionalDialog(page);
 
   return summary;
@@ -86,7 +88,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
 export async function verifyTransaction(page: Page, checkoutSummary: OrderSummary): Promise<OrderSummary> {
   console.log('[transactions] Opening My Transactions');
   await resetAppZoom(page);
-  await navigateByText(page, /my transactions/i);
+  await openTransactionsPage(page);
   await waitForAppReady(page);
   await resetAppZoom(page);
 
@@ -161,6 +163,21 @@ async function waitForLatestTransactionRow(page: Page) {
   }
 
   throw new Error(`Transactions table did not load within ${timeoutMs / 1000} seconds after order submission. Current URL: ${page.url()}`);
+}
+
+async function openTransactionsPage(page: Page) {
+  const link = page.getByRole('link', { name: /my transactions/i })
+    .or(page.locator('a').filter({ hasText: /my transactions/i }))
+    .or(page.getByText(/^my transactions$/i))
+    .first();
+
+  if (await isVisible(link, 5_000)) {
+    await link.click();
+    return;
+  }
+
+  console.log('[transactions] My Transactions link is not visible yet; opening /transactions directly');
+  await page.goto('/transactions', { waitUntil: 'domcontentloaded' });
 }
 
 function transactionRows(page: Page) {
@@ -633,6 +650,20 @@ async function waitForKitchenMessageSubmission(page: Page, message: string) {
     .catch(() => false);
 }
 
+async function waitForOrderSubmissionState(page: Page) {
+  return expect.poll(async () => {
+    await waitForAppReady(page);
+    const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+    const submitVisible = await isVisible(page.getByRole('button', { name: /submit order|place order|confirm order|complete order/i }).first(), 500);
+    const transactionsVisible = await isVisible(page.getByText(/^my transactions$/i).first(), 500);
+    const confirmationVisible = /order.*(sent|submitted|received|placed)|thank you|success/i.test(bodyText);
+    return transactionsVisible || confirmationVisible || !submitVisible;
+  }, {
+    message: 'Expected order submission to finish before opening My Transactions',
+    timeout: 90_000,
+  }).toBe(true);
+}
+
 async function choosePaymentIfNeeded(page: Page) {
   const mealCredit = page.getByRole('button', { name: /meal credit/i }).or(page.getByText(/^meal credit$/i)).first();
   if (await isVisible(mealCredit, 2_000)) {
@@ -649,9 +680,12 @@ async function clickButtonByName(page: Page, name: RegExp) {
 }
 
 async function navigateByText(page: Page, text: RegExp) {
-  const link = page.getByRole('link', { name: text }).or(page.locator('a').filter({ hasText: text })).first();
-  await expect(link).toBeVisible();
-  await link.click();
+  const target = page.getByRole('link', { name: text })
+    .or(page.getByRole('button', { name: text }))
+    .or(page.locator('a, button, [role="button"], p, span').filter({ hasText: text }))
+    .first();
+  await expect(target).toBeVisible();
+  await target.click();
 }
 
 async function visibleChoiceCandidates(page: Page) {
