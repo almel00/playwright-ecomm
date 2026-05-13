@@ -6,7 +6,7 @@ loadDotEnv(path.resolve(__dirname, '.env'));
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: /resident-ordering\.spec\.ts/,
+  testMatch: /.*\.spec\.ts/,
   timeout: 120_000,
   expect: {
     timeout: 15_000,

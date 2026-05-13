@@ -1,38 +1,62 @@
 import { expect, type Locator, type Page } from 'playwright/test';
-import { compact, extractCheckoutSummary, extractItemNameAndPrice, moneyFromText, parseTransactionSummary, type ModifierSummary, type OrderSummary } from './orderTotals';
+import { getRuntimeConfig, type RuntimeConfig } from './config';
+import { compact, extractCheckoutSummary, extractItemNameAndPrice, moneyFromText, parseTransactionSummary, type ItemSummary, type ModifierSummary, type OrderSummary } from './orderTotals';
 import { dismissOptionalDialog, isVisible, waitForAppReady } from './login';
 
-const KITCHEN_MESSAGE = 'Servingintel test. Please do not make!';
+export type OrderFlowOptions = {
+  itemCount?: number;
+  placeOrder?: boolean;
+  config?: RuntimeConfig;
+};
 
-export async function completeOrderingFlow(page: Page): Promise<OrderSummary> {
+export async function completeOrderingFlow(page: Page, options: OrderFlowOptions = {}): Promise<OrderSummary> {
+  const config = options.config ?? getRuntimeConfig();
+  const itemCount = options.itemCount ?? 1;
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
   console.log('[order] Detecting revenue centers or direct menu view');
-  await selectRevenueCenterIfPresent(page);
+  const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
 
   console.log('[order] Selecting a menu dynamically');
-  await selectFirstMenu(page);
+  const menuName = await selectMenu(page, config);
 
-  console.log('[order] Selecting an available item dynamically');
-  const item = await chooseFirstAvailableItem(page);
-  const { itemName, itemPrice } = await extractItemNameAndPrice(item);
-  await item.click();
-  await waitForAppReady(page);
+  const items: ItemSummary[] = [];
+  for (let index = 0; index < itemCount; index += 1) {
+    console.log(`[order] Selecting available item ${index + 1} of ${itemCount}`);
+    const item = await chooseAvailableItem(page, config, index);
+    const { itemName, itemPrice } = await extractItemNameAndPrice(item);
+    await item.click();
+    await waitForAppReady(page);
 
-  console.log(`[order] Selected item: ${itemName} ($${itemPrice.toFixed(2)})`);
-  const modifiers = await selectModifiersIfPresent(page);
+    console.log(`[order] Selected item: ${itemName} ($${itemPrice.toFixed(2)})`);
+    const modifiers = await selectModifiersIfPresent(page);
 
-  console.log('[order] Adding item to order');
-  await clickButtonByName(page, /add to check|add to cart|add item|add/i);
-  await waitForAppReady(page);
+    console.log('[order] Adding item to order');
+    await clickButtonByName(page, /add to check|add to cart|add item|add/i);
+    await waitForAppReady(page);
+    items.push({ name: itemName, price: itemPrice, modifiers });
+  }
 
   console.log('[order] Opening checkout from lower-right popup/button');
   await openCheckout(page);
 
   console.log('[checkout] Adding kitchen message');
-  await addKitchenMessage(page, KITCHEN_MESSAGE);
+  await addKitchenMessage(page, config.kitchenMessage);
 
   console.log('[checkout] Capturing subtotal, tax, and total');
-  const summary = await extractCheckoutSummary(page, itemName, itemPrice, modifiers);
+  const summary = await extractCheckoutSummary(page, {
+    runId,
+    selectionMode: config.selectionMode,
+    revenueCenterName,
+    menuName,
+    items,
+    kitchenMessage: config.kitchenMessage,
+  });
   await choosePaymentIfNeeded(page);
+
+  if (options.placeOrder === false) {
+    return summary;
+  }
 
   console.log('[checkout] Placing order');
   await clickButtonByName(page, /submit order|place order|confirm order|complete order/i);
@@ -64,7 +88,7 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   const dialog = page.getByRole('dialog').first();
   const transactionText = await (await isVisible(dialog, 2_000) ? dialog.innerText() : page.locator('body').innerText());
   expect(transactionText).toContain(checkoutSummary.itemName);
-  expect(transactionText).toContain(KITCHEN_MESSAGE);
+  expect(transactionText).toContain(checkoutSummary.kitchenMessage);
 
   const transactionSummary = parseTransactionSummary(transactionText, checkoutSummary);
   const close = page.getByRole('button', { name: /close|ok/i }).first();
@@ -79,13 +103,32 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   return transactionSummary;
 }
 
-async function selectRevenueCenterIfPresent(page: Page) {
-  const menuAlreadyVisible = await hasMenuSignals(page);
-  if (menuAlreadyVisible) {
+export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRuntimeConfig()) {
+  const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
+  const menuName = await selectMenu(page, config);
+  return { revenueCenterName, menuName };
+}
+
+export async function selectSearchResultIfAvailable(page: Page, searchText: string) {
+  const searchBox = page.locator('input[type="search"], input[placeholder*="search" i], input[name*="search" i], input[id*="search" i]').first();
+  if (await isVisible(searchBox, 2_000)) {
+    await searchBox.fill(searchText);
+    await searchBox.press('Enter').catch(() => {});
+    await waitForAppReady(page);
+    await expect(page.getByText(new RegExp(escapeRegex(searchText), 'i')).first()).toBeVisible();
     return;
   }
 
-  const candidates = await visibleChoiceCandidates(page);
+  testSkip(`Search input was not visible for SEARCH_ITEM_NAME="${searchText}".`);
+}
+
+async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
+  const menuAlreadyVisible = await hasMenuSignals(page);
+  if (menuAlreadyVisible) {
+    return 'Direct menu';
+  }
+
+  const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetRevenueCenter);
   for (const candidate of candidates) {
     const text = compact(await candidate.innerText().catch(() => ''));
     if (!text || isChromeOrActionText(text)) {
@@ -96,15 +139,15 @@ async function selectRevenueCenterIfPresent(page: Page) {
     await waitForAppReady(page);
     if (await hasMenuSignals(page)) {
       console.log(`[order] Revenue center selected: ${text}`);
-      return;
+      return text;
     }
     await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
     await waitForAppReady(page);
   }
 }
 
-async function selectFirstMenu(page: Page) {
-  const candidates = await visibleChoiceCandidates(page);
+async function selectMenu(page: Page, config: RuntimeConfig) {
+  const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetMenu);
   for (const candidate of candidates) {
     const text = compact(await candidate.innerText().catch(() => ''));
     if (!text || isChromeOrActionText(text)) {
@@ -115,26 +158,32 @@ async function selectFirstMenu(page: Page) {
     await waitForAppReady(page);
     if (await hasItemSignals(page)) {
       console.log(`[order] Menu selected: ${text}`);
-      return;
+      return text;
     }
   }
   throw new Error('Could not find a visible menu with items.');
 }
 
-async function chooseFirstAvailableItem(page: Page): Promise<Locator> {
+async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: number): Promise<Locator> {
   const itemCards = page.locator('[data-testid*="item" i], [aria-label*="$"], .MuiCard-root', { hasText: /\$\s*\d/ });
+  const candidates: Locator[] = [];
   const count = await itemCards.count();
   for (let index = 0; index < count; index += 1) {
     const item = itemCards.nth(index);
     const text = compact(await item.innerText().catch(() => ''));
     if (await isVisible(item) && /\$\s*\d/.test(text) && !/sold out|unavailable/i.test(text)) {
-      return item;
+      candidates.push(item);
     }
   }
 
-  const pricedText = page.getByText(/\$\s*\d/).first();
-  await expect(pricedText).toBeVisible();
-  return pricedText;
+  if (candidates.length === 0) {
+    const pricedText = page.getByText(/\$\s*\d/).first();
+    await expect(pricedText).toBeVisible();
+    return pricedText;
+  }
+
+  const ordered = await orderCandidates(candidates, config, config.targetItem);
+  return ordered[Math.min(offset, ordered.length - 1)];
 }
 
 async function selectModifiersIfPresent(page: Page): Promise<ModifierSummary[]> {
@@ -261,6 +310,41 @@ function dedupeModifiers(modifiers: ModifierSummary[]) {
     seen.add(key);
     return true;
   });
+}
+
+async function orderCandidates(candidates: Locator[], config: RuntimeConfig, targetName?: string) {
+  const ordered = [...candidates];
+  if (targetName) {
+    const scored = await Promise.all(ordered.map(async (locator) => ({
+      locator,
+      matchesTarget: await locatorMayContain(locator, targetName),
+    })));
+    return scored
+      .sort((a, b) => Number(b.matchesTarget) - Number(a.matchesTarget))
+      .map((entry) => entry.locator);
+  }
+  if (config.selectionMode === 'random' && !targetName) {
+    return shuffle(ordered);
+  }
+  return ordered;
+}
+
+async function locatorMayContain(locator: Locator, value: string) {
+  const text = compact(await locator.innerText().catch(() => ''));
+  return text.toLowerCase().includes(value.toLowerCase());
+}
+
+function shuffle<T>(values: T[]) {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function testSkip(message: string): never {
+  throw new Error(`SKIP: ${message}`);
 }
 
 function escapeRegex(value: string) {

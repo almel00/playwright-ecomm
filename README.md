@@ -1,27 +1,25 @@
-# Resident Ordering Playwright Test
+# Resident Ordering Playwright Tests
 
-This project contains a Playwright automation for the resident ordering flow.
+Playwright coverage for the resident ordering flow. All URL and credential values come from environment variables.
 
-## Automation Plan
+## Scope
 
-1. Open `BASE_URL`.
-2. Log in with `RESIDENT_FIRST_NAME`, `RESIDENT_ROOM`, and `RESIDENT_PIN`.
-3. Detect whether the app is showing revenue centers or menu choices.
-4. If revenue centers are present, select a visible revenue center that leads to menus.
-5. Select a visible menu dynamically.
-6. Select the first available menu item dynamically.
-7. Detect modifiers. Select enough required modifiers to enable add-to-check, and select an available modifier when modifiers exist.
-8. Add the item to the order and open checkout.
-9. Add the kitchen message: `Servingintel test. Please do not make!`
-10. Capture item, modifiers, subtotal, tax, and total, then validate `subtotal + tax = total`.
-11. Place the order.
-12. Open My Transactions, open the matching transaction, and validate item, modifiers, kitchen message, and total.
-13. Return to In Room Ordering.
-14. Log out and verify the login page is visible.
+Default coverage proves that a resident can:
+
+1. Log in.
+2. Reach revenue centers or direct menus.
+3. Dynamically select a revenue center, menu, available item, and modifiers.
+4. Add one item to an order.
+5. Checkout with a kitchen message.
+6. Validate subtotal, tax, and total math.
+7. Place the order.
+8. Find and open the order in My Transactions.
+9. Validate item, modifiers, kitchen message, and total.
+10. Return to In Room Ordering and log out.
+
+Additional specs cover login/logout, invalid login, item search, mobile menu navigation, sold-out item detection, multi-item ordering, and checkout/payment edge-case inspection when the needed env flags or fixture data are provided.
 
 ## Setup
-
-Install dependencies:
 
 ```powershell
 npm install
@@ -34,7 +32,7 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Required environment variables:
+Required:
 
 ```text
 BASE_URL=
@@ -43,31 +41,104 @@ RESIDENT_ROOM=
 RESIDENT_PIN=
 ```
 
-All URL and credential configuration comes from environment variables. Do not commit `.env`.
+Do not commit `.env`.
+
+## Selection Controls
+
+By default, the tests select the first valid visible revenue center, menu, and item.
+
+```text
+SELECTION_MODE=first
+```
+
+To broaden coverage across runs:
+
+```text
+SELECTION_MODE=random
+```
+
+To target known data while keeping config outside code:
+
+```text
+TARGET_REVENUE_CENTER=
+TARGET_MENU=
+TARGET_ITEM=
+```
+
+Targeted values are preferred when found. If a target is not visible, the test falls back to dynamic discovery.
+
+## Optional Coverage
+
+These are disabled by default:
+
+```text
+RUN_SEARCH_TEST=true
+SEARCH_ITEM_NAME=
+
+RUN_MULTI_ITEM_ORDER=true
+
+RUN_PAYMENT_FAILURE_TEST=true
+
+INVALID_RESIDENT_FIRST_NAME=
+INVALID_RESIDENT_ROOM=
+INVALID_RESIDENT_PIN=
+```
+
+`RUN_MULTI_ITEM_ORDER=true` places an additional real order. `RUN_PAYMENT_FAILURE_TEST=true` stops at checkout and does not submit.
 
 ## Run
+
+Main end-to-end order test:
 
 ```powershell
 npm run test:resident-ordering
 ```
 
-The test writes the latest order summary to:
+Non-ordering focused coverage:
+
+```powershell
+npm run test:coverage
+```
+
+Everything:
+
+```powershell
+npm run test:all
+```
+
+Latest order summary:
 
 ```text
 test-results/order-summary.json
 ```
 
+The summary includes selected revenue center, menu, item, modifiers, subtotal, tax, total, kitchen message, order id when visible, selection mode, and transaction comparison status.
+
 ## Reports
 
-Playwright is configured for:
+Configured reports/artifacts:
 
 - HTML report
 - Screenshot on failure
 - Video on failure
 - Trace on first retry
+- GitHub Actions artifact upload
 
 Open the HTML report:
 
 ```powershell
 npm run report
 ```
+
+## CI
+
+GitHub Actions is configured in `.github/workflows/playwright.yml`. Add these repository secrets:
+
+```text
+BASE_URL
+RESIDENT_FIRST_NAME
+RESIDENT_ROOM
+RESIDENT_PIN
+```
+
+The CI workflow runs the main resident ordering test and uploads Playwright artifacts.

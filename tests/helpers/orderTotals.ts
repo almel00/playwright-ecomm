@@ -7,13 +7,29 @@ export type ModifierSummary = {
   price: number;
 };
 
+export type ItemSummary = {
+  name: string;
+  price: number;
+  modifiers: ModifierSummary[];
+};
+
 export type OrderSummary = {
+  runId: string;
+  timestamp: string;
+  selectionMode: string;
+  revenueCenterName: string;
+  menuName: string;
   itemName: string;
   itemPrice: number;
+  items: ItemSummary[];
   modifiers: ModifierSummary[];
   subtotal: number;
   tax: number;
+  taxPresent: boolean;
   total: number;
+  orderId: string;
+  kitchenMessage: string;
+  checkoutTotalMatchesTransaction?: boolean;
 };
 
 export function moneyFromText(text: string): number | null {
@@ -25,19 +41,43 @@ export function allMoneyFromText(text: string): number[] {
   return [...text.replace(/,/g, '').matchAll(/\$?\s*(-?\d+(?:\.\d{1,2})?)/g)].map((match) => Number(match[1]));
 }
 
-export async function extractCheckoutSummary(page: Page, fallbackItemName: string, fallbackItemPrice: number, modifiers: ModifierSummary[]): Promise<OrderSummary> {
+export async function extractCheckoutSummary(
+  page: Page,
+  details: {
+    runId: string;
+    selectionMode: string;
+    revenueCenterName: string;
+    menuName: string;
+    items: ItemSummary[];
+    kitchenMessage: string;
+  },
+): Promise<OrderSummary> {
   const body = await page.locator('body').innerText();
-  const subtotal = findLabeledMoney(body, /subtotal/i) ?? fallbackItemPrice + modifiers.reduce((sum, modifier) => sum + modifier.price, 0);
-  const tax = findLabeledMoney(body, /\btax\b/i) ?? 0;
+  const firstItem = details.items[0];
+  const itemTotal = details.items.reduce((sum, item) => sum + item.price + item.modifiers.reduce((modifierSum, modifier) => modifierSum + modifier.price, 0), 0);
+  const taxValue = findLabeledMoney(body, /\btax\b/i);
+  const subtotal = findLabeledMoney(body, /subtotal/i) ?? itemTotal;
+  const tax = taxValue ?? 0;
   const total = findLabeledMoney(body, /\btotal\b|amount due/i) ?? subtotal + tax;
+  const orderId = findOrderId(body);
+  const modifiers = details.items.flatMap((item) => item.modifiers);
 
   const summary: OrderSummary = {
-    itemName: fallbackItemName,
-    itemPrice: fallbackItemPrice,
+    runId: details.runId,
+    timestamp: new Date().toISOString(),
+    selectionMode: details.selectionMode,
+    revenueCenterName: details.revenueCenterName,
+    menuName: details.menuName,
+    itemName: firstItem.name,
+    itemPrice: firstItem.price,
+    items: details.items,
     modifiers,
     subtotal,
     tax,
+    taxPresent: taxValue !== null,
     total,
+    orderId,
+    kitchenMessage: details.kitchenMessage,
   };
 
   validateMath(summary);
@@ -68,6 +108,8 @@ export function compareSummaries(checkout: OrderSummary, transaction: OrderSumma
   for (const modifier of checkout.modifiers) {
     expect(transaction.modifiers.map((entry) => entry.name.toLowerCase()).join('\n')).toContain(modifier.name.toLowerCase());
   }
+
+  checkout.checkoutTotalMatchesTransaction = roundMoney(transaction.total) === roundMoney(checkout.total);
 }
 
 export async function saveOrderSummary(summary: OrderSummary) {
@@ -83,12 +125,21 @@ export function parseTransactionSummary(text: string, checkout: OrderSummary): O
   const modifierNames = checkout.modifiers.filter((modifier) => text.toLowerCase().includes(modifier.name.toLowerCase()));
 
   return {
+    runId: checkout.runId,
+    timestamp: new Date().toISOString(),
+    selectionMode: checkout.selectionMode,
+    revenueCenterName: checkout.revenueCenterName,
+    menuName: checkout.menuName,
     itemName: text.includes(checkout.itemName) ? checkout.itemName : firstMeaningfulLine(text),
     itemPrice: checkout.itemPrice,
+    items: checkout.items,
     modifiers: modifierNames,
     subtotal,
     tax,
+    taxPresent: findLabeledMoney(text, /\btax\b/i) !== null,
     total,
+    orderId: findOrderId(text) || checkout.orderId,
+    kitchenMessage: checkout.kitchenMessage,
   };
 }
 
@@ -111,6 +162,10 @@ function firstMeaningfulLine(text: string) {
 
 export function compact(text: string) {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+function findOrderId(text: string) {
+  return text.match(/(?:order|confirmation|transaction)\s*(?:#|id|number)?\s*:?\s*([A-Z0-9-]{4,})/i)?.[1] ?? '';
 }
 
 function roundMoney(value: number) {

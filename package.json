@@ -6,6 +6,8 @@
   "scripts": {
     "test": "playwright test",
     "test:resident-ordering": "playwright test tests/resident-ordering.spec.ts",
+    "test:coverage": "playwright test tests/auth.spec.ts tests/menu-coverage.spec.ts",
+    "test:all": "playwright test",
     "report": "playwright show-report"
   },
   "devDependencies": {
