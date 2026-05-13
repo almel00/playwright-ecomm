@@ -45,7 +45,7 @@ on:
 
 jobs:
   test:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }} / ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }} / ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || vars.DEFAULT_TEST_SUITE || 'resident-ordering' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }}
@@ -68,6 +68,7 @@ jobs:
       RUN_MULTI_ITEM_ORDER: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_multi_item_order) || vars.RUN_MULTI_ITEM_ORDER || 'false' }}
       RUN_PAYMENT_FAILURE_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_payment_failure_test) || vars.RUN_PAYMENT_FAILURE_TEST || 'false' }}
       REPORT_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
+      TEST_SUITE: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || vars.DEFAULT_TEST_SUITE || 'resident-ordering' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,7 +86,7 @@ jobs:
 
       - name: Select test command
         run: |
-          case "${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}" in
+          case "$TEST_SUITE" in
             resident-ordering)
               echo "TEST_COMMAND=npm run test:resident-ordering" >> "$GITHUB_ENV"
               ;;
@@ -96,7 +97,7 @@ jobs:
               echo "TEST_COMMAND=npm run test:all" >> "$GITHUB_ENV"
               ;;
             *)
-              echo "Unsupported test suite"
+              echo "Unsupported test suite: $TEST_SUITE"
               exit 1
               ;;
           esac
@@ -111,7 +112,7 @@ jobs:
             echo "## Resident Ordering Test Run"
             echo ""
             echo "- Environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }}"
-            echo "- Suite: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}"
+            echo "- Suite: $TEST_SUITE"
             echo "- Site: ${SITE_NAME:-$BASE_URL}"
             echo "- Report root: test-results/reports"
             echo ""
