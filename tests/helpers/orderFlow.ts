@@ -300,19 +300,19 @@ async function navigateByText(page: Page, text: RegExp) {
 }
 
 async function visibleChoiceCandidates(page: Page) {
-  const locator = page.locator('button, [role="button"], [data-testid*="card" i], .MuiCard-root').filter({ hasText: /\S/ });
+  const locator = page.locator('main button, main [role="button"], main [data-testid*="card" i], main .MuiCard-root, .MuiCard-root').filter({ hasText: /\S/ });
   const count = await locator.count();
   const candidates: Locator[] = [];
   for (let index = 0; index < count; index += 1) {
     const candidate = locator.nth(index);
-    if (await isVisible(candidate, 500) && !(await isNonOrderingControl(candidate))) {
+    if (await isVisible(candidate, 500) && (await isOrderingContentCandidate(candidate))) {
       candidates.push(candidate);
     }
   }
   return candidates;
 }
 
-async function isNonOrderingControl(locator: Locator) {
+async function isOrderingContentCandidate(locator: Locator) {
   return locator.evaluate((element) => {
     const text = (element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const aria = (element.getAttribute('aria-label') || '').toLowerCase();
@@ -323,23 +323,37 @@ async function isNonOrderingControl(locator: Locator) {
     const style = window.getComputedStyle(element as HTMLElement);
 
     if (!text && !aria && !title) {
-      return true;
+      return false;
     }
 
     if (combined.match(/logout|log out|sign out|not .*ava|forgot|change pin|profile|privacy|terms|checkout|cart|transaction|font size|accessibility|zoom|drawer|menu button/)) {
-      return true;
+      return false;
     }
 
     if (className.includes('muifab-root') || className.includes('fab')) {
-      return true;
+      return false;
     }
 
-    if ((style.position === 'fixed' || style.position === 'sticky') && (rect.bottom > window.innerHeight - 160 || rect.left < 120)) {
-      return true;
+    if (style.position === 'fixed' || style.position === 'sticky') {
+      return false;
     }
 
-    return false;
-  }).catch(() => true);
+    if (rect.width < 120 || rect.height < 45) {
+      return false;
+    }
+
+    const isEdgeControl =
+      rect.left < 80 ||
+      rect.top < 80 ||
+      rect.right > window.innerWidth - 24 ||
+      rect.bottom > window.innerHeight - 80;
+
+    if (isEdgeControl && !combined.includes('menu')) {
+      return false;
+    }
+
+    return true;
+  }).catch(() => false);
 }
 
 async function hasMenuSignals(page: Page) {
