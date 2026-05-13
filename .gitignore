@@ -1,0 +1,7 @@
+.env
+node_modules/
+.playwright-mcp/
+playwright-report/
+test-results/
+screenshots/
+*.log
