@@ -109,17 +109,18 @@ export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRun
   return { revenueCenterName, menuName };
 }
 
-export async function selectSearchResultIfAvailable(page: Page, searchText: string) {
+export async function selectSearchResultIfAvailable(page: Page, searchText?: string) {
+  const query = searchText || await visibleItemName(page);
   const searchBox = page.locator('input[type="search"], input[placeholder*="search" i], input[name*="search" i], input[id*="search" i]').first();
   if (await isVisible(searchBox, 2_000)) {
-    await searchBox.fill(searchText);
+    await searchBox.fill(query);
     await searchBox.press('Enter').catch(() => {});
     await waitForAppReady(page);
-    await expect(page.getByText(new RegExp(escapeRegex(searchText), 'i')).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(escapeRegex(query), 'i')).first()).toBeVisible();
     return;
   }
 
-  testSkip(`Search input was not visible for SEARCH_ITEM_NAME="${searchText}".`);
+  testSkip(`Search input was not visible for discovered item "${query}".`);
 }
 
 async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
@@ -184,6 +185,12 @@ async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: nu
 
   const ordered = await orderCandidates(candidates, config, config.targetItem);
   return ordered[Math.min(offset, ordered.length - 1)];
+}
+
+async function visibleItemName(page: Page) {
+  const item = await chooseAvailableItem(page, { ...getRuntimeConfig(), targetItem: undefined }, 0);
+  const { itemName } = await extractItemNameAndPrice(item);
+  return itemName;
 }
 
 async function selectModifiersIfPresent(page: Page): Promise<ModifierSummary[]> {

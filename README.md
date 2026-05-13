@@ -84,7 +84,7 @@ INVALID_RESIDENT_ROOM=
 INVALID_RESIDENT_PIN=
 ```
 
-`RUN_MULTI_ITEM_ORDER=true` places an additional real order. `RUN_PAYMENT_FAILURE_TEST=true` stops at checkout and does not submit.
+When `RUN_SEARCH_TEST=true`, the search test uses `SEARCH_ITEM_NAME` if provided. If it is blank, the test discovers a visible item name and searches for that. `RUN_MULTI_ITEM_ORDER=true` places an additional real order. `RUN_PAYMENT_FAILURE_TEST=true` stops at checkout and does not submit.
 
 ## Run
 

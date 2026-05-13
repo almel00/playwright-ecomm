@@ -12,7 +12,7 @@ test('resident can reach a menu with available priced items', async ({ page }) =
   await logoutResident(page);
 });
 
-const searchTest = config.runSearchTest && config.searchItemName ? test : test.skip;
+const searchTest = config.runSearchTest ? test : test.skip;
 searchTest('resident item search returns configured item when enabled', async ({ page }) => {
   await loginResident(page, residentCredentials());
   await openDynamicMenu(page, config);
