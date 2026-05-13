@@ -389,7 +389,7 @@ async function addKitchenMessage(page: Page, message: string) {
     .or(page.locator('input[placeholder="Enter special instructions"], textarea[placeholder="Enter special instructions"]'))
     .last();
 
-  await expect(label.or(input), 'Message to Kitchen label or input should be visible on checkout').toBeVisible({ timeout: 10_000 });
+  await expect(label.first(), 'Message to Kitchen label should be visible on checkout').toBeVisible({ timeout: 10_000 });
   await expect(input, 'Message to Kitchen input should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
   await input.scrollIntoViewIfNeeded();
   await input.click();
