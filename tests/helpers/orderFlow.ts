@@ -14,12 +14,9 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   const itemCount = options.itemCount ?? 1;
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  console.log('[order] Detecting revenue centers or direct menu view');
+  console.log('[order] Detecting revenue centers and menus');
   await assertNotOnPinScreen(page);
-  const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
-
-  console.log('[order] Selecting a menu dynamically');
-  const menuName = await selectMenu(page, config);
+  const { revenueCenterName, menuName } = await selectRevenueCenterAndMenu(page, config);
 
   const items: ItemSummary[] = [];
   for (let index = 0; index < itemCount; index += 1) {
@@ -113,9 +110,7 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
 
 export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRuntimeConfig()) {
   await assertNotOnPinScreen(page);
-  const revenueCenterName = await selectRevenueCenterIfPresent(page, config);
-  const menuName = await selectMenu(page, config);
-  return { revenueCenterName, menuName };
+  return selectRevenueCenterAndMenu(page, config);
 }
 
 async function assertNotOnPinScreen(page: Page) {
@@ -139,86 +134,101 @@ export async function selectSearchResultIfAvailable(page: Page, searchText?: str
   testSkip(`Search input was not visible for discovered item "${query}".`);
 }
 
-async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
-  const menuAlreadyVisible = await hasMenuSignals(page);
-  if (menuAlreadyVisible) {
-    return 'Direct menu';
+async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
+  if (await hasItemSignals(page)) {
+    return { revenueCenterName: 'Direct menu', menuName: 'Direct menu' };
   }
 
-  if (config.targetRevenueCenter) {
-    const targeted = await clickTargetCardIfVisible(page, config.targetRevenueCenter);
-    if (targeted) {
-      await waitForAppReady(page);
-      await failIfReturnedToLogin(page, config.targetRevenueCenter);
-      if (await hasMenuSignals(page)) {
-        console.log(`[order] Revenue center selected: ${config.targetRevenueCenter}`);
-        return config.targetRevenueCenter;
-      }
+  const startingUrl = page.url();
+  const revenueNames = orderNames(await visibleCardNames(page), config, config.targetRevenueCenter);
+  console.log(`[order] Revenue center candidates: ${revenueNames.join(' | ') || '(none)'}`);
+
+  if (revenueNames.length === 0) {
+    const directMenu = await chooseMenuOnCurrentPage(page, config, 'Direct menu');
+    if (directMenu) {
+      return directMenu;
     }
+    throw new Error('Could not find revenue center cards or direct menus.');
   }
 
-  const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetRevenueCenter);
-  for (const candidate of candidates) {
-    const text = compact(await candidate.innerText().catch(() => ''));
-    if (!text || isChromeOrActionText(text)) {
+  for (const revenueName of revenueNames) {
+    await returnToOrderingStart(page, startingUrl);
+    if (!(await clickCardByName(page, revenueName))) {
       continue;
     }
-
-    await candidate.click();
     await waitForAppReady(page);
-    await failIfReturnedToLogin(page, text);
-    if (await hasMenuSignals(page)) {
-      console.log(`[order] Revenue center selected: ${text}`);
-      return text;
-    }
-    await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
-    await waitForAppReady(page);
-  }
-}
+    await failIfReturnedToLogin(page, revenueName);
 
-async function selectMenu(page: Page, config: RuntimeConfig) {
-  if (config.targetMenu) {
-    const targeted = await clickTargetCardIfVisible(page, config.targetMenu);
-    if (targeted) {
-      await waitForAppReady(page);
-      await failIfReturnedToLogin(page, config.targetMenu);
-      if (await hasItemSignals(page)) {
-        console.log(`[order] Menu selected: ${config.targetMenu}`);
-        return config.targetMenu;
-      }
-    }
-  }
-
-  const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetMenu);
-  for (const candidate of candidates) {
-    const text = compact(await candidate.innerText().catch(() => ''));
-    if (!text || isChromeOrActionText(text)) {
-      continue;
-    }
-
-    await candidate.click();
-    await waitForAppReady(page);
-    await failIfReturnedToLogin(page, text);
     if (await hasItemSignals(page)) {
-      console.log(`[order] Menu selected: ${text}`);
-      return text;
+      console.log(`[order] Revenue center selected with direct items: ${revenueName}`);
+      return { revenueCenterName: revenueName, menuName: 'Direct menu' };
     }
+
+    const selected = await chooseMenuOnCurrentPage(page, config, revenueName);
+    if (selected) {
+      return selected;
+    }
+
+    console.log(`[order] Revenue center "${revenueName}" did not expose a menu with priced items; trying next candidate`);
   }
-  throw new Error('Could not find a visible menu with items.');
+
+  throw new Error(`Could not find a revenue center/menu path with priced items. Tried: ${revenueNames.join(', ')}`);
 }
 
-async function clickTargetCardIfVisible(page: Page, targetText: string) {
-  const target = page
-    .locator('.cardAreaMenu, .MuiCardActionArea-root')
-    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(targetText)}\\s*$`, 'i') })
-    .first();
+async function chooseMenuOnCurrentPage(page: Page, config: RuntimeConfig, revenueCenterName: string) {
+  const menuNames = orderNames(await visibleCardNames(page), config, config.targetMenu);
+  console.log(`[order] Menu candidates for ${revenueCenterName}: ${menuNames.join(' | ') || '(none)'}`);
+  const menuStartUrl = page.url();
 
-  if (!(await isVisible(target, 2_000))) {
-    return false;
+  for (const menuName of menuNames) {
+    await returnToOrderingStart(page, menuStartUrl);
+    if (!(await clickCardByName(page, menuName))) {
+      continue;
+    }
+    await waitForAppReady(page);
+    await failIfReturnedToLogin(page, menuName);
+
+    if (await hasItemSignals(page)) {
+      console.log(`[order] Revenue center selected: ${revenueCenterName}`);
+      console.log(`[order] Menu selected: ${menuName}`);
+      return { revenueCenterName, menuName };
+    }
+
+    console.log(`[order] Menu "${menuName}" did not show priced items; trying next menu`);
   }
 
-  await target.click();
-  return true;
+  return null;
+}
+
+async function visibleCardNames(page: Page) {
+  const cards = await visibleChoiceCandidates(page);
+  const names = await Promise.all(cards.map(async (candidate) => compact(await candidate.innerText().catch(() => ''))));
+  return [...new Set(names.filter((name) => name && !isChromeOrActionText(name)))];
+}
+
+async function clickCardByName(page: Page, name: string) {
+  const cards = page.locator('.cardAreaMenu, .MuiCardActionArea-root').filter({ hasText: /\S/ });
+  const count = await cards.count();
+  for (let index = 0; index < count; index += 1) {
+    const card = cards.nth(index);
+    const text = compact(await card.innerText().catch(() => ''));
+    if (text.toLowerCase() === name.toLowerCase() && await isVisible(card, 1_000)) {
+      await card.click();
+      return true;
+    }
+  }
+  return false;
+}
+
+async function returnToOrderingStart(page: Page, targetUrl: string) {
+  if (page.url() === targetUrl) {
+    return;
+  }
+
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' }).catch(async () => {
+    await navigateByText(page, /in-?room ordering/i).catch(() => {});
+  });
+  await waitForAppReady(page);
 }
 
 async function failIfReturnedToLogin(page: Page, clickedText: string) {
@@ -365,6 +375,17 @@ async function visibleChoiceCandidates(page: Page) {
   }
   console.log(`[order] Found fallback content candidates: ${await candidateTexts(candidates)}`);
   return candidates;
+}
+
+function orderNames(names: string[], config: RuntimeConfig, targetName?: string) {
+  const ordered = [...names];
+  if (targetName) {
+    ordered.sort((a, b) => Number(b.toLowerCase() === targetName.toLowerCase()) - Number(a.toLowerCase() === targetName.toLowerCase()));
+  }
+  if (config.selectionMode === 'random' && !targetName) {
+    return shuffle(ordered);
+  }
+  return ordered;
 }
 
 async function candidateTexts(candidates: Locator[]) {
