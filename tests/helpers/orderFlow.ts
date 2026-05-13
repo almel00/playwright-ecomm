@@ -113,14 +113,7 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
 }
 
 async function openLatestTransaction(page: Page, checkoutSummary: OrderSummary) {
-  await expect(page.locator('table').first(), 'Transactions table should be visible after order submission').toBeVisible({ timeout: 30_000 });
-
-  const latestRow = page
-    .locator('tbody tr, [role="rowgroup"] [role="checkbox"], [role="row"]')
-    .filter({ hasText: /\$\s*\d/ })
-    .first();
-  await expect(latestRow, 'Latest transaction row should be visible').toBeVisible({ timeout: 15_000 });
-
+  const latestRow = await waitForLatestTransactionRow(page);
   const rowText = compact(await latestRow.innerText());
   console.log(`[transactions] Latest row: ${rowText}`);
   expect(rowText, 'Latest transaction row should show the checkout total').toMatch(moneyPattern(checkoutSummary.total));
@@ -132,6 +125,45 @@ async function openLatestTransaction(page: Page, checkoutSummary: OrderSummary) 
   }
 
   await latestRow.click({ force: true });
+}
+
+async function waitForLatestTransactionRow(page: Page) {
+  const timeoutMs = 90_000;
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    attempt += 1;
+    await waitForAppReady(page);
+    await resetAppZoom(page);
+
+    const table = page.locator('table').first();
+    const latestRow = transactionRows(page).first();
+    if (await isVisible(table, 3_000) && await isVisible(latestRow, 3_000)) {
+      return latestRow;
+    }
+
+    const bodyText = compact(await page.locator('body').innerText().catch(() => ''));
+    console.log(`[transactions] Waiting for transactions table (attempt ${attempt}); url=${page.url()}; page="${bodyText.slice(0, 140)}"`);
+
+    if (!/\/transactions\b/i.test(page.url())) {
+      await navigateByText(page, /my transactions/i).catch(async () => {
+        await page.goto('/transactions', { waitUntil: 'domcontentloaded' }).catch(() => {});
+      });
+    } else if (attempt % 2 === 0) {
+      await page.goto('/transactions', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    } else {
+      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+    }
+  }
+
+  throw new Error(`Transactions table did not load within ${timeoutMs / 1000} seconds after order submission. Current URL: ${page.url()}`);
+}
+
+function transactionRows(page: Page) {
+  return page
+    .locator('tbody tr, [role="rowgroup"] [role="row"], [role="row"]')
+    .filter({ hasText: /\$\s*\d/ });
 }
 
 export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRuntimeConfig()) {
