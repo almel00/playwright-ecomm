@@ -152,7 +152,7 @@ async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
   }
 
   for (const revenueName of revenueNames) {
-    await returnToOrderingStart(page, startingUrl);
+    await returnToRevenueCenterList(page, revenueNames, startingUrl);
     if (!(await clickCardByName(page, revenueName))) {
       continue;
     }
@@ -170,6 +170,7 @@ async function selectRevenueCenterAndMenu(page: Page, config: RuntimeConfig) {
     }
 
     console.log(`[order] Revenue center "${revenueName}" did not expose a menu with priced items; trying next candidate`);
+    await returnToRevenueCenterList(page, revenueNames, startingUrl);
   }
 
   throw new Error(`Could not find a revenue center/menu path with priced items. Tried: ${revenueNames.join(', ')}`);
@@ -181,7 +182,7 @@ async function chooseMenuOnCurrentPage(page: Page, config: RuntimeConfig, revenu
   const menuStartUrl = page.url();
 
   for (const menuName of menuNames) {
-    await returnToOrderingStart(page, menuStartUrl);
+    await returnToMenuList(page, menuNames, menuStartUrl);
     if (!(await clickCardByName(page, menuName))) {
       continue;
     }
@@ -195,6 +196,7 @@ async function chooseMenuOnCurrentPage(page: Page, config: RuntimeConfig, revenu
     }
 
     console.log(`[order] Menu "${menuName}" did not show priced items; trying next menu`);
+    await returnToMenuList(page, menuNames, menuStartUrl);
   }
 
   return null;
@@ -220,15 +222,45 @@ async function clickCardByName(page: Page, name: string) {
   return false;
 }
 
-async function returnToOrderingStart(page: Page, targetUrl: string) {
-  if (page.url() === targetUrl) {
+async function returnToRevenueCenterList(page: Page, expectedRevenueNames: string[], fallbackUrl: string) {
+  if (await pageHasAnyCard(page, expectedRevenueNames)) {
     return;
   }
 
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' }).catch(async () => {
-    await navigateByText(page, /in-?room ordering/i).catch(() => {});
-  });
+  await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
   await waitForAppReady(page);
+  if (await pageHasAnyCard(page, expectedRevenueNames)) {
+    return;
+  }
+
+  await navigateByText(page, /in-?room ordering/i).catch(() => {});
+  await waitForAppReady(page);
+  if (await pageHasAnyCard(page, expectedRevenueNames)) {
+    return;
+  }
+
+  await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
+}
+
+async function returnToMenuList(page: Page, expectedMenuNames: string[], fallbackUrl: string) {
+  if (await pageHasAnyCard(page, expectedMenuNames)) {
+    return;
+  }
+
+  await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
+  if (await pageHasAnyCard(page, expectedMenuNames)) {
+    return;
+  }
+
+  await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
+}
+
+async function pageHasAnyCard(page: Page, names: string[]) {
+  const visibleNames = await visibleCardNames(page);
+  return names.some((name) => visibleNames.some((visibleName) => visibleName.toLowerCase() === name.toLowerCase()));
 }
 
 async function failIfReturnedToLogin(page: Page, clickedText: string) {
