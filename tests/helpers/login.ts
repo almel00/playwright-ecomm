@@ -8,7 +8,7 @@ export type ResidentCredentials = {
 
 export async function loginResident(page: Page, credentials: ResidentCredentials) {
   console.log('[login] Opening resident ordering site');
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await openResidentSite(page);
   await waitForAppReady(page);
 
   console.log('[login] Entering first name and room');
@@ -21,9 +21,30 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await enterPin(page, credentials.pin);
   await page.getByRole('button', { name: /^login$/i }).click();
   await waitForAppReady(page);
+  if (await isOnPinScreen(page)) {
+    console.log('[login] PIN screen still visible after submit; retrying PIN once');
+    await enterPin(page, credentials.pin);
+    await page.getByRole('button', { name: /^login$/i }).click();
+    await waitForAppReady(page);
+  }
 
   await dismissOptionalDialog(page);
   await expectResidentOrderingReady(page);
+}
+
+async function openResidentSite(page: Page) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+      console.log('[login] Site did not finish loading; retrying initial navigation');
+      await page.goto('about:blank').catch(() => {});
+    }
+  }
 }
 
 export async function logoutResident(page: Page) {
@@ -108,4 +129,9 @@ async function expectResidentOrderingReady(page: Page) {
     const bodyText = await page.locator('body').innerText().catch(() => '');
     throw new Error(`Resident login did not reach ordering/menu screen after PIN entry. Current page text starts with: ${bodyText.slice(0, 500)}`);
   });
+}
+
+async function isOnPinScreen(page: Page) {
+  const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+  return bodyText.includes('please enter your pin') || bodyText.includes('enter pin');
 }

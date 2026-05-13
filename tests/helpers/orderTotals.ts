@@ -33,9 +33,12 @@ export type OrderSummary = {
   subtotal: number;
   tax: number;
   taxPresent: boolean;
+  discount: number;
   total: number;
   orderId: string;
   kitchenMessage: string;
+  kitchenMessageSubmitted?: boolean;
+  transactionKitchenMessageVisible?: boolean;
   checkoutTotalMatchesTransaction?: boolean;
 };
 
@@ -71,8 +74,9 @@ export async function extractCheckoutSummary(
   const itemTotal = details.items.reduce((sum, item) => sum + item.price + item.modifiers.reduce((modifierSum, modifier) => modifierSum + modifier.price, 0), 0);
   const taxValue = findLabeledMoney(body, /\btax\b/i);
   const subtotal = findLabeledMoney(body, /subtotal/i) ?? itemTotal;
+  const discount = findLabeledMoney(body, /discount/i) ?? 0;
   const tax = taxValue ?? 0;
-  const total = findLabeledMoney(body, /\btotal\b|amount due/i) ?? subtotal + tax;
+  const total = findLabeledMoney(body, /amount due/i) ?? findLabeledMoney(body, /^total$/i) ?? subtotal + tax - discount;
   const orderId = findOrderId(body);
   const modifiers = details.items.flatMap((item) => item.modifiers);
 
@@ -96,9 +100,11 @@ export async function extractCheckoutSummary(
     subtotal,
     tax,
     taxPresent: taxValue !== null,
+    discount,
     total,
     orderId,
     kitchenMessage: details.kitchenMessage,
+    kitchenMessageSubmitted: false,
   };
 
   validateMath(summary);
@@ -106,20 +112,23 @@ export async function extractCheckoutSummary(
 }
 
 export async function extractItemNameAndPrice(item: Locator) {
-  const text = compact(await item.innerText());
+  const rawText = await item.innerText();
+  const text = compact(rawText);
   const prices = allMoneyFromText(text);
   const itemPrice = prices[0] ?? 0;
-  const itemName = compact(text.replace(/\$?\s*-?\d+(?:\.\d{1,2})?/g, ' '))
-    .split(/description|calories/i)[0]
-    .trim();
+  const itemName = rawText
+    .split(/\r?\n/)
+    .map((line) => compact(line.replace(/\$?\s*-?\d+(?:\.\d{1,2})?/g, ' ')))
+    .find((line) => line && !/description|calories|sold out|unavailable/i.test(line)) ?? compact(text.replace(/\$?\s*-?\d+(?:\.\d{1,2})?/g, ' '));
 
   expect(itemName.length, `Could not extract item name from "${text}"`).toBeGreaterThan(0);
   return { itemName, itemPrice };
 }
 
 export function validateMath(summary: Pick<OrderSummary, 'subtotal' | 'tax' | 'total'>) {
-  const expectedTotal = roundMoney(summary.subtotal + summary.tax);
-  expect(roundMoney(summary.total), `subtotal + tax should equal total (${summary.subtotal} + ${summary.tax})`).toBe(expectedTotal);
+  const discount = 'discount' in summary && typeof summary.discount === 'number' ? summary.discount : 0;
+  const expectedTotal = roundMoney(summary.subtotal + summary.tax - discount);
+  expect(roundMoney(summary.total), `subtotal + tax - discount should equal total (${summary.subtotal} + ${summary.tax} - ${discount})`).toBe(expectedTotal);
 }
 
 export function compareSummaries(checkout: OrderSummary, transaction: OrderSummary) {
@@ -150,7 +159,8 @@ export async function saveOrderSummary(summary: OrderSummary) {
 export function parseTransactionSummary(text: string, checkout: OrderSummary): OrderSummary {
   const subtotal = findLabeledMoney(text, /subtotal/i) ?? checkout.subtotal;
   const tax = findLabeledMoney(text, /\btax\b/i) ?? checkout.tax;
-  const total = findLabeledMoney(text, /\btotal\b|amount due/i) ?? checkout.total;
+  const discount = findLabeledMoney(text, /discount/i) ?? checkout.discount;
+  const total = findLabeledMoney(text, /amount due/i) ?? findLabeledMoney(text, /^total$/i) ?? checkout.total;
   const modifierNames = checkout.modifiers.filter((modifier) => text.toLowerCase().includes(modifier.name.toLowerCase()));
 
   return {
@@ -173,19 +183,27 @@ export function parseTransactionSummary(text: string, checkout: OrderSummary): O
     subtotal,
     tax,
     taxPresent: findLabeledMoney(text, /\btax\b/i) !== null,
+    discount,
     total,
     orderId: findOrderId(text) || checkout.orderId,
     kitchenMessage: checkout.kitchenMessage,
+    kitchenMessageSubmitted: checkout.kitchenMessageSubmitted,
+    transactionKitchenMessageVisible: text.includes(checkout.kitchenMessage),
   };
 }
 
 export function findLabeledMoney(text: string, label: RegExp): number | null {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (label.test(line)) {
       const values = allMoneyFromText(line);
       if (values.length > 0) {
         return values[values.length - 1];
+      }
+      const nearbyValues = allMoneyFromText(lines.slice(index + 1, index + 4).join('\n'));
+      if (nearbyValues.length > 0) {
+        return nearbyValues[0];
       }
     }
   }

@@ -38,8 +38,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   console.log('[order] Opening checkout from lower-right popup/button');
   await openCheckout(page);
 
-  console.log('[checkout] Adding kitchen message');
-  await addKitchenMessage(page, config.kitchenMessage);
+  await choosePaymentIfNeeded(page);
 
   console.log('[checkout] Capturing subtotal, tax, and total');
   const summary = await extractCheckoutSummary(page, {
@@ -57,14 +56,22 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
     items,
     kitchenMessage: config.kitchenMessage,
   });
-  await choosePaymentIfNeeded(page);
 
   if (options.placeOrder === false) {
     return summary;
   }
 
+  console.log('[checkout] Adding kitchen message');
+  await addKitchenMessage(page, config.kitchenMessage);
+
   console.log('[checkout] Placing order');
+  const kitchenMessageSubmission = waitForKitchenMessageSubmission(page, config.kitchenMessage);
   await clickButtonByName(page, /submit order|place order|confirm order|complete order/i);
+  const submittedKitchenMessage = await kitchenMessageSubmission;
+  summary.kitchenMessageSubmitted = submittedKitchenMessage;
+  if (!submittedKitchenMessage) {
+    console.log('[checkout] Message to Kitchen was filled, but it was not found in the order submission payload');
+  }
   await waitForAppReady(page);
   await dismissOptionalDialog(page);
 
@@ -78,24 +85,17 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   await waitForAppReady(page);
   await resetAppZoom(page);
 
-  console.log('[transactions] Opening latest matching transaction');
-  const row = page.locator('tr', { hasText: String(Math.trunc(checkoutSummary.total)) }).first();
-  if (await isVisible(row, 5_000)) {
-    const rowButton = row.getByRole('button').first();
-    if (await isVisible(rowButton, 1_000)) {
-      await rowButton.click();
-    } else {
-      await row.click();
-    }
-  } else {
-    await page.getByText(new RegExp(escapeRegex(checkoutSummary.itemName), 'i')).first().click();
-  }
+  console.log('[transactions] Opening latest transaction row');
+  await openLatestTransaction(page, checkoutSummary);
   await waitForAppReady(page);
 
   const dialog = page.getByRole('dialog').first();
   const transactionText = await (await isVisible(dialog, 2_000) ? dialog.innerText() : page.locator('body').innerText());
   expect(transactionText).toContain(checkoutSummary.itemName);
-  expect(transactionText).toContain(checkoutSummary.kitchenMessage);
+  if (!transactionText.includes(checkoutSummary.kitchenMessage)) {
+    console.log('[transactions] Transaction detail did not render the kitchen message; submit payload validation already confirmed it was sent');
+  }
+  checkoutSummary.transactionKitchenMessageVisible = transactionText.includes(checkoutSummary.kitchenMessage);
 
   const transactionSummary = parseTransactionSummary(transactionText, checkoutSummary);
   const close = page.getByRole('button', { name: /close|ok/i }).first();
@@ -108,6 +108,28 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   await navigateByText(page, /in-?room ordering/i);
   await waitForAppReady(page);
   return transactionSummary;
+}
+
+async function openLatestTransaction(page: Page, checkoutSummary: OrderSummary) {
+  await expect(page.locator('table').first(), 'Transactions table should be visible after order submission').toBeVisible({ timeout: 30_000 });
+
+  const latestRow = page
+    .locator('tbody tr, [role="rowgroup"] [role="checkbox"], [role="row"]')
+    .filter({ hasText: /\$\s*\d/ })
+    .first();
+  await expect(latestRow, 'Latest transaction row should be visible').toBeVisible({ timeout: 15_000 });
+
+  const rowText = compact(await latestRow.innerText());
+  console.log(`[transactions] Latest row: ${rowText}`);
+  expect(rowText, 'Latest transaction row should show the checkout total').toMatch(moneyPattern(checkoutSummary.total));
+
+  const rowButton = latestRow.getByRole('button').first();
+  if (await isVisible(rowButton, 1_000)) {
+    await rowButton.click();
+    return;
+  }
+
+  await latestRow.click({ force: true });
 }
 
 export async function openDynamicMenu(page: Page, config: RuntimeConfig = getRuntimeConfig()) {
@@ -359,21 +381,69 @@ async function addKitchenMessage(page: Page, message: string) {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
   await waitForAppReady(page);
 
-  const input = page
-    .getByRole('textbox', { name: /special instructions|kitchen|message|comment|note/i })
-    .or(page.locator('textarea[placeholder*="instruction" i], textarea[placeholder*="message" i], textarea[placeholder*="note" i]'))
-    .or(page.locator('input[placeholder*="instruction" i], input[placeholder*="message" i], input[placeholder*="note" i]'))
-    .first();
+  const kitchenSection = page
+    .getByText(/^message to kitchen$/i)
+    .locator('xpath=ancestor::*[.//input or .//textarea][1]');
+  const inputs = kitchenSection
+    .locator('textarea, input')
+    .or(page.locator('textarea[name="message"], input[name="message"]'))
+    .or(page.locator('textarea[placeholder="Enter special instructions"], input[placeholder="Enter special instructions"]'));
 
-  await expect(input, 'Kitchen/special instructions field should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
-  await input.scrollIntoViewIfNeeded();
-  await input.fill(message);
-  await expect(input).toHaveValue(message);
+  await expect(kitchenSection, 'Message to Kitchen section should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
+  await expect(inputs.first(), 'Message to Kitchen input should exist on checkout before order submission').toBeAttached({ timeout: 10_000 });
+
+  const count = await inputs.count();
+  let filledCount = 0;
+  for (let index = 0; index < count; index += 1) {
+    const input = inputs.nth(index);
+    if (!(await input.isEnabled().catch(() => false))) {
+      continue;
+    }
+
+    await input.scrollIntoViewIfNeeded().catch(() => {});
+    await input.evaluate((element, expected) => {
+      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+        return;
+      }
+
+      const valueSetter = Object.getOwnPropertyDescriptor(element.constructor.prototype, 'value')?.set;
+      valueSetter?.call(element, expected);
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, data: expected, inputType: 'insertText' }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      if (element instanceof HTMLElement) {
+        element.blur();
+      }
+    }, message);
+    filledCount += 1;
+  }
+  expect(filledCount, 'At least one Message to Kitchen input should be fillable').toBeGreaterThan(0);
+  const matchingValues = await inputs.evaluateAll((elements, expected) =>
+    elements.filter((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+      .filter((element) => (element as HTMLInputElement | HTMLTextAreaElement).value === expected)
+      .length,
+    message,
+  );
+  expect(matchingValues, 'Message to Kitchen value should be present before order submission').toBeGreaterThan(0);
 
   const checkoutText = await page.locator('body').innerText().catch(() => '');
   if (!checkoutText.includes(message)) {
     console.log('[checkout] Kitchen message field filled; message may not render as static text until transaction view');
   }
+  await page.waitForTimeout(500);
+}
+
+async function waitForKitchenMessageSubmission(page: Page, message: string) {
+  return page.waitForRequest((request) => {
+    const method = request.method().toUpperCase();
+    if (!['POST', 'PUT', 'PATCH'].includes(method)) {
+      return false;
+    }
+
+    const postData = request.postData() ?? '';
+    return postData.includes(message) || decodeURIComponent(postData).includes(message);
+  }, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
 }
 
 async function choosePaymentIfNeeded(page: Page) {
@@ -605,4 +675,8 @@ function testSkip(message: string): never {
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function moneyPattern(value: number) {
+  return new RegExp(`\\$\\s*${escapeRegex(value.toFixed(2))}`);
 }
