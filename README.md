@@ -142,7 +142,7 @@ Watch the browser locally:
 npm run test:resident-ordering -- --headed --slow-mo=500
 ```
 
-The default Playwright viewport is `1920x1080`, and headed Chromium starts maximized to reduce overlap with floating controls.
+Headed Chromium starts maximized with a `1920x1080` window size to reduce overlap with floating controls.
 
 Non-ordering focused coverage:
 
