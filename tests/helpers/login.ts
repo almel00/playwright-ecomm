@@ -22,7 +22,7 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await page.getByRole('button', { name: /^login$/i }).click();
   await waitForAppReady(page);
   const visiblePinInput = page.getByRole('textbox', { name: /enter pin/i });
-  if (await isOnPinScreen(page) && await isVisible(visiblePinInput, 2_000)) {
+  if (!(await isResidentOrderingReadyNow(page)) && await isVisible(visiblePinInput, 2_000)) {
     console.log('[login] PIN screen still visible after submit; retrying PIN once');
     await enterPin(page, credentials.pin);
     const loginButton = page.getByRole('button', { name: /^login$/i }).first();
@@ -53,17 +53,20 @@ async function openResidentSite(page: Page) {
 
 export async function logoutResident(page: Page) {
   console.log('[logout] Returning to logged-out state');
-  const lowerLeftButton = page.locator('button').filter({ has: page.locator('svg') }).last();
-  const namedLogout = page.getByRole('button', { name: /logout|log out|sign out/i }).first();
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const namedLogout = page.getByRole('button', { name: /logout|log out|sign out/i }).first();
+    if (await isVisible(namedLogout, 1_000)) {
+      await namedLogout.click();
+    } else {
+      await clickLowerLeftIconButton(page);
+    }
 
-  if (await isVisible(namedLogout, 1_000)) {
-    await namedLogout.click();
-  } else {
-    await lowerLeftButton.click();
+    await waitForAppReady(page);
+    await dismissOptionalDialog(page);
+    if (await isLoggedOutNow(page)) {
+      break;
+    }
   }
-
-  await waitForAppReady(page);
-  await dismissOptionalDialog(page);
   await expectLoggedOut(page);
 }
 
@@ -101,7 +104,15 @@ async function enterPin(page: Page, pin: string) {
   await pinInput.scrollIntoViewIfNeeded();
   await pinInput.click();
   await pinInput.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A').catch(() => {});
-  await pinInput.fill('');
+  if (await isResidentOrderingReadyNow(page)) {
+    return;
+  }
+  await pinInput.fill('').catch(async (error) => {
+    if (await isResidentOrderingReadyNow(page)) {
+      return;
+    }
+    throw error;
+  });
   await pinInput.type(pin, { delay: 75 });
 
   if (!(await isVisible(pinInput, 1_000))) {
@@ -143,18 +154,65 @@ async function expectResidentOrderingReady(page: Page) {
 }
 
 async function expectLoggedOut(page: Page) {
-  await expect(page.getByText(/hello\. please log into your account\./i)).toBeVisible({ timeout: 30_000 });
-
-  const namedFirstName = page.getByRole('textbox', { name: /first name/i });
-  if (await isVisible(namedFirstName, 1_000)) {
-    return;
-  }
-
-  await expect(page.locator('input').first(), 'Logged-out page should show the first-name input').toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('input').nth(1), 'Logged-out page should show the room input').toBeVisible({ timeout: 30_000 });
+  await expect.poll(async () => {
+    return isLoggedOutNow(page);
+  }, {
+    message: 'Expected logged-out login screen with first-name and room inputs',
+    timeout: 30_000,
+  }).toBe(true);
 }
 
-async function isOnPinScreen(page: Page) {
+async function isLoggedOutNow(page: Page) {
   const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-  return bodyText.includes('please enter your pin') || bodyText.includes('enter pin');
+  const visibleInputCount = await visibleCount(page.locator('input'));
+  const loginButtonVisible = await isVisible(page.getByRole('button', { name: /^login$/i }).first(), 500);
+  return loginButtonVisible && visibleInputCount >= 2 && (bodyText.includes('first name') || bodyText.includes('please log into your account'));
+}
+
+async function isResidentOrderingReadyNow(page: Page) {
+  return (await isVisible(page.getByText(/in-?room ordering/i).first(), 500)) ||
+    (await isVisible(page.getByText(/my transactions/i).first(), 500)) ||
+    (await isVisible(page.getByRole('button', { name: /^menu$/i }).first(), 500));
+}
+
+async function clickLowerLeftIconButton(page: Page) {
+  const buttons = page.locator('button').filter({ has: page.locator('svg') });
+  const count = await buttons.count();
+  let selectedBox: { x: number; y: number; width: number; height: number } | null = null;
+  let selectedScore = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < count; index += 1) {
+    const button = buttons.nth(index);
+    if (!(await isVisible(button, 500))) {
+      continue;
+    }
+
+    const box = await button.boundingBox().catch(() => null);
+    if (!box || box.x > 180) {
+      continue;
+    }
+
+    const score = box.y - box.x;
+    if (score > selectedScore) {
+      selectedScore = score;
+      selectedBox = box;
+    }
+  }
+
+  if (!selectedBox) {
+    throw new Error('Could not find lower-left logout icon button.');
+  }
+
+  await page.mouse.click(selectedBox.x + selectedBox.width / 2, selectedBox.y + selectedBox.height / 2);
+}
+
+async function visibleCount(locator: ReturnType<Page['locator']>) {
+  const count = await locator.count();
+  let visible = 0;
+  for (let index = 0; index < count; index += 1) {
+    if (await isVisible(locator.nth(index), 250)) {
+      visible += 1;
+    }
+  }
+  return visible;
 }
