@@ -300,7 +300,23 @@ async function navigateByText(page: Page, text: RegExp) {
 }
 
 async function visibleChoiceCandidates(page: Page) {
-  const locator = page.locator('main button, main [role="button"], main [data-testid*="card" i], main .MuiCard-root, .MuiCard-root').filter({ hasText: /\S/ });
+  const cardActionCandidates = page.locator('.cardAreaMenu, .MuiCardActionArea-root').filter({ hasText: /\S/ });
+  const cardActionCount = await cardActionCandidates.count();
+  if (cardActionCount > 0) {
+    const candidates: Locator[] = [];
+    for (let index = 0; index < cardActionCount; index += 1) {
+      const candidate = cardActionCandidates.nth(index);
+      if (await isVisible(candidate, 500) && (await isOrderingContentCandidate(candidate))) {
+        candidates.push(candidate);
+      }
+    }
+    if (candidates.length > 0) {
+      console.log(`[order] Found content card candidates: ${await candidateTexts(candidates)}`);
+      return candidates;
+    }
+  }
+
+  const locator = page.locator('main [data-testid*="card" i], main .MuiCard-root, .MuiCard-root').filter({ hasText: /\S/ });
   const count = await locator.count();
   const candidates: Locator[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -309,7 +325,13 @@ async function visibleChoiceCandidates(page: Page) {
       candidates.push(candidate);
     }
   }
+  console.log(`[order] Found fallback content candidates: ${await candidateTexts(candidates)}`);
   return candidates;
+}
+
+async function candidateTexts(candidates: Locator[]) {
+  const texts = await Promise.all(candidates.map(async (candidate) => compact(await candidate.innerText().catch(() => ''))));
+  return texts.filter(Boolean).join(' | ');
 }
 
 async function isOrderingContentCandidate(locator: Locator) {
