@@ -21,7 +21,7 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await enterPin(page, credentials.pin);
   await page.getByRole('button', { name: /^login$/i }).click();
   await waitForAppReady(page);
-  if (await isOnPinScreen(page)) {
+  if (await isOnPinScreen(page) && await isVisible(page.getByRole('textbox', { name: /enter pin/i }), 2_000)) {
     console.log('[login] PIN screen still visible after submit; retrying PIN once');
     await enterPin(page, credentials.pin);
     await page.getByRole('button', { name: /^login$/i }).click();
@@ -89,8 +89,9 @@ export async function isVisible(locator: ReturnType<Page['locator']>, timeout = 
 
 async function enterPin(page: Page, pin: string) {
   const pinInput = page
-    .locator('input[name*="pin" i], input[id*="pin" i], input[aria-label*="pin" i], input[type="password"], input')
-    .last();
+    .getByRole('textbox', { name: /enter pin/i })
+    .or(page.locator('input[name*="pin" i], input[id*="pin" i], input[aria-label*="pin" i], input[type="password"]'))
+    .first();
 
   await expect(pinInput).toBeVisible({ timeout: 15_000 });
   await pinInput.scrollIntoViewIfNeeded();

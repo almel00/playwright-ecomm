@@ -381,54 +381,14 @@ async function addKitchenMessage(page: Page, message: string) {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
   await waitForAppReady(page);
 
-  const kitchenSection = page
-    .getByText(/^message to kitchen$/i)
-    .locator('xpath=ancestor::*[.//input or .//textarea][1]');
-  const inputs = kitchenSection
-    .locator('textarea, input')
-    .or(page.locator('textarea[name="message"], input[name="message"]'))
-    .or(page.locator('textarea[placeholder="Enter special instructions"], input[placeholder="Enter special instructions"]'));
+  await expect(page.getByText(/^message to kitchen$/i), 'Message to Kitchen label should be visible on checkout').toBeVisible({ timeout: 10_000 });
 
-  await expect(kitchenSection, 'Message to Kitchen section should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
-  await expect(inputs.first(), 'Message to Kitchen input should exist on checkout before order submission').toBeAttached({ timeout: 10_000 });
-
-  const count = await inputs.count();
-  let filledCount = 0;
-  for (let index = 0; index < count; index += 1) {
-    const input = inputs.nth(index);
-    if (!(await input.isEnabled().catch(() => false))) {
-      continue;
-    }
-
-    await input.scrollIntoViewIfNeeded().catch(() => {});
-    await input.evaluate((element, expected) => {
-      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
-        return;
-      }
-
-      const valueSetter = Object.getOwnPropertyDescriptor(element.constructor.prototype, 'value')?.set;
-      valueSetter?.call(element, expected);
-      element.dispatchEvent(new InputEvent('input', { bubbles: true, data: expected, inputType: 'insertText' }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-      if (element instanceof HTMLElement) {
-        element.blur();
-      }
-    }, message);
-    filledCount += 1;
-  }
-  expect(filledCount, 'At least one Message to Kitchen input should be fillable').toBeGreaterThan(0);
-  const matchingValues = await inputs.evaluateAll((elements, expected) =>
-    elements.filter((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
-      .filter((element) => (element as HTMLInputElement | HTMLTextAreaElement).value === expected)
-      .length,
-    message,
-  );
-  expect(matchingValues, 'Message to Kitchen value should be present before order submission').toBeGreaterThan(0);
-
-  const checkoutText = await page.locator('body').innerText().catch(() => '');
-  if (!checkoutText.includes(message)) {
-    console.log('[checkout] Kitchen message field filled; message may not render as static text until transaction view');
-  }
+  const input = page.getByRole('textbox', { name: /^enter special instructions$/i }).last();
+  await expect(input, 'Message to Kitchen input should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
+  await input.scrollIntoViewIfNeeded();
+  await input.click();
+  await input.fill(message);
+  await expect(input).toHaveValue(message);
   await page.waitForTimeout(500);
 }
 
