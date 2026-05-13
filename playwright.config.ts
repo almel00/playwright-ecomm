@@ -25,7 +25,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
-    viewport: { width: 1366, height: 900 },
+    viewport: { width: 1920, height: 1080 },
+    launchOptions: {
+      args: ['--start-maximized'],
+    },
     locale: 'en-US',
   },
   projects: [

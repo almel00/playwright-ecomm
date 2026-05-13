@@ -136,6 +136,14 @@ Main end-to-end order test:
 npm run test:resident-ordering
 ```
 
+Watch the browser locally:
+
+```powershell
+npm run test:resident-ordering -- --headed --slow-mo=500
+```
+
+The default Playwright viewport is `1920x1080`, and headed Chromium starts maximized to reduce overlap with floating controls.
+
 Non-ordering focused coverage:
 
 ```powershell
