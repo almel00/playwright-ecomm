@@ -38,6 +38,11 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   console.log('[order] Opening checkout from lower-right popup/button');
   await openCheckout(page);
 
+  if (options.placeOrder !== false) {
+    console.log('[checkout] Adding kitchen message');
+    await addKitchenMessage(page, config.kitchenMessage);
+  }
+
   await choosePaymentIfNeeded(page);
 
   console.log('[checkout] Capturing subtotal, tax, and total');
@@ -60,9 +65,6 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   if (options.placeOrder === false) {
     return summary;
   }
-
-  console.log('[checkout] Adding kitchen message');
-  await addKitchenMessage(page, config.kitchenMessage);
 
   console.log('[checkout] Placing order');
   const kitchenMessageSubmission = waitForKitchenMessageSubmission(page, config.kitchenMessage);
@@ -381,9 +383,13 @@ async function addKitchenMessage(page: Page, message: string) {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
   await waitForAppReady(page);
 
-  await expect(page.getByText(/^message to kitchen$/i), 'Message to Kitchen label should be visible on checkout').toBeVisible({ timeout: 10_000 });
+  const label = page.getByText(/^message to kitchen$/i);
+  const input = page
+    .getByRole('textbox', { name: /^enter special instructions$/i })
+    .or(page.locator('input[placeholder="Enter special instructions"], textarea[placeholder="Enter special instructions"]'))
+    .last();
 
-  const input = page.getByRole('textbox', { name: /^enter special instructions$/i }).last();
+  await expect(label.or(input), 'Message to Kitchen label or input should be visible on checkout').toBeVisible({ timeout: 10_000 });
   await expect(input, 'Message to Kitchen input should be visible on checkout before order submission').toBeVisible({ timeout: 10_000 });
   await input.scrollIntoViewIfNeeded();
   await input.click();

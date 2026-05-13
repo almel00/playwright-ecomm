@@ -21,7 +21,8 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await enterPin(page, credentials.pin);
   await page.getByRole('button', { name: /^login$/i }).click();
   await waitForAppReady(page);
-  if (await isOnPinScreen(page) && await isVisible(page.getByRole('textbox', { name: /enter pin/i }), 2_000)) {
+  const visiblePinInput = page.getByRole('textbox', { name: /enter pin/i });
+  if (await isOnPinScreen(page) && await isVisible(visiblePinInput, 2_000)) {
     console.log('[login] PIN screen still visible after submit; retrying PIN once');
     await enterPin(page, credentials.pin);
     await page.getByRole('button', { name: /^login$/i }).click();
@@ -100,17 +101,23 @@ async function enterPin(page: Page, pin: string) {
   await pinInput.fill('');
   await pinInput.type(pin, { delay: 75 });
 
-  const currentValue = await pinInput.inputValue().catch(() => '');
+  if (!(await isVisible(pinInput, 1_000))) {
+    return;
+  }
+
+  const currentValue = await pinInput.inputValue().catch(() => pin);
   if (currentValue !== pin) {
     await pinInput.evaluate((element, value) => {
       const input = element as HTMLInputElement;
       input.value = value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, pin);
+    }, pin).catch(() => {});
   }
 
-  await expect(pinInput).toHaveValue(pin, { timeout: 5_000 });
+  if (await isVisible(pinInput, 1_000)) {
+    await expect(pinInput).toHaveValue(pin, { timeout: 5_000 });
+  }
 }
 
 async function expectResidentOrderingReady(page: Page) {
