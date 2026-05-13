@@ -389,7 +389,7 @@ async function failIfReturnedToLogin(page: Page, clickedText: string) {
 
 async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: number): Promise<Locator> {
   await findPricedItemsWithScroll(page);
-  const candidates = await availableItemCandidates(page);
+  const candidates = await availableItemCandidates(page, config.selectionMode === 'random' && !config.targetItem);
 
   if (candidates.length === 0) {
     const pricedText = page.getByText(/\$\s*\d/).first();
@@ -405,25 +405,29 @@ async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: nu
   return ordered[Math.min(offset, ordered.length - 1)];
 }
 
-async function availableItemCandidates(page: Page) {
+async function availableItemCandidates(page: Page, excludeRiskyRandomItems = false) {
   const itemCards = page.locator('[data-testid*="item" i], [aria-label*="$"], .MuiCard-root', { hasText: /\$\s*\d/ });
   const candidates: Locator[] = [];
   const count = await itemCards.count();
   for (let index = 0; index < count; index += 1) {
     const item = itemCards.nth(index);
     const text = compact(await item.innerText().catch(() => ''));
-    if (await isVisible(item) && /\$\s*\d/.test(text) && !/sold out|unavailable/i.test(text)) {
+    if (await isVisible(item) && /\$\s*\d/.test(text) && !/sold out|unavailable/i.test(text) && !(excludeRiskyRandomItems && isRiskyRandomOrderItem(text))) {
       candidates.push(item);
     }
   }
   return candidates;
 }
 
+function isRiskyRandomOrderItem(text: string) {
+  return /home care|maintenance|transportation|pickleball|event tickets|laundry|reservation|rental/i.test(text);
+}
+
 async function countAvailableItemsAfterScroll(page: Page) {
   if (!(await findPricedItemsWithScroll(page))) {
     return 0;
   }
-  return (await availableItemCandidates(page)).length;
+  return (await availableItemCandidates(page, true)).length;
 }
 
 async function visibleItemName(page: Page) {
