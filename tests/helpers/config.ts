@@ -13,10 +13,12 @@ export type RuntimeConfig = {
   targetMenu?: string;
   targetItem?: string;
   kitchenMessage: string;
+  runModifierItemOrder: boolean;
   runMultiItemOrder: boolean;
   runPaymentFailureTest: boolean;
   runSearchTest: boolean;
   searchItemName?: string;
+  targetModifierItem?: string;
   invalidFirstName?: string;
   invalidRoom?: string;
   invalidPin?: string;
@@ -36,10 +38,12 @@ export function getRuntimeConfig(): RuntimeConfig {
     targetMenu: optionalEnv('TARGET_MENU'),
     targetItem: optionalEnv('TARGET_ITEM'),
     kitchenMessage: process.env.KITCHEN_MESSAGE || 'Servingintel test. Please do not make!',
+    runModifierItemOrder: booleanEnv('RUN_MODIFIER_ITEM_ORDER'),
     runMultiItemOrder: booleanEnv('RUN_MULTI_ITEM_ORDER'),
     runPaymentFailureTest: booleanEnv('RUN_PAYMENT_FAILURE_TEST'),
     runSearchTest: booleanEnv('RUN_SEARCH_TEST'),
     searchItemName: optionalEnv('SEARCH_ITEM_NAME'),
+    targetModifierItem: optionalEnv('TARGET_MODIFIER_ITEM'),
     invalidFirstName: optionalEnv('INVALID_RESIDENT_FIRST_NAME'),
     invalidRoom: optionalEnv('INVALID_RESIDENT_ROOM'),
     invalidPin: optionalEnv('INVALID_RESIDENT_PIN'),

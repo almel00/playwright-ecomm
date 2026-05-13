@@ -29,6 +29,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_modifier_item_order:
+        description: Run modifier item order coverage; places an extra order
+        required: true
+        default: false
+        type: boolean
       run_multi_item_order:
         description: Run multi-item order coverage; places an extra order
         required: true
@@ -65,6 +70,8 @@ jobs:
       KITCHEN_MESSAGE: ${{ vars.KITCHEN_MESSAGE || 'Servingintel test. Please do not make!' }}
       RUN_SEARCH_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_search_test) || vars.RUN_SEARCH_TEST || 'false' }}
       SEARCH_ITEM_NAME: ${{ vars.SEARCH_ITEM_NAME }}
+      RUN_MODIFIER_ITEM_ORDER: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_modifier_item_order) || vars.RUN_MODIFIER_ITEM_ORDER || 'false' }}
+      TARGET_MODIFIER_ITEM: ${{ vars.TARGET_MODIFIER_ITEM }}
       RUN_MULTI_ITEM_ORDER: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_multi_item_order) || vars.RUN_MULTI_ITEM_ORDER || 'false' }}
       RUN_PAYMENT_FAILURE_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_payment_failure_test) || vars.RUN_PAYMENT_FAILURE_TEST || 'false' }}
       REPORT_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}

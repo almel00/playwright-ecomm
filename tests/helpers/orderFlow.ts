@@ -6,6 +6,7 @@ import { dismissOptionalDialog, isVisible, waitForAppReady } from './login';
 export type OrderFlowOptions = {
   itemCount?: number;
   placeOrder?: boolean;
+  requireModifier?: boolean;
   config?: RuntimeConfig;
 };
 
@@ -21,13 +22,15 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   const items: ItemSummary[] = [];
   for (let index = 0; index < itemCount; index += 1) {
     console.log(`[order] Selecting available item ${index + 1} of ${itemCount}`);
-    const item = await chooseAvailableItem(page, config, index);
-    const { itemName, itemPrice } = await extractItemNameAndPrice(item);
-    await item.click();
-    await waitForAppReady(page);
+    const { itemName, itemPrice } = options.requireModifier
+      ? await chooseAndOpenModifierItem(page, config, index)
+      : await chooseAndOpenAvailableItem(page, config, index);
 
     console.log(`[order] Selected item: ${itemName} ($${itemPrice.toFixed(2)})`);
     const modifiers = await selectModifiersIfPresent(page);
+    if (options.requireModifier && modifiers.length === 0) {
+      throw new Error(`Selected modifier coverage item "${itemName}", but no modifier was selected. Verify the item has available required or optional modifiers.`);
+    }
 
     console.log('[order] Adding item to order');
     await clickButtonByName(page, /add to check|add to cart|add item|add/i);
@@ -437,6 +440,40 @@ async function chooseAvailableItem(page: Page, config: RuntimeConfig, offset: nu
   return ordered[Math.min(offset, ordered.length - 1)];
 }
 
+async function chooseAndOpenAvailableItem(page: Page, config: RuntimeConfig, offset: number) {
+  const item = await chooseAvailableItem(page, config, offset);
+  const summary = await extractItemNameAndPrice(item);
+  await item.click();
+  await waitForAppReady(page);
+  return summary;
+}
+
+async function chooseAndOpenModifierItem(page: Page, config: RuntimeConfig, offset: number) {
+  await findPricedItemsWithScroll(page);
+  const menuUrl = page.url();
+  const candidates = await availableItemCandidates(page, false);
+  const ordered = await orderCandidates(candidates, config, config.targetModifierItem || config.targetItem);
+  const attempted: string[] = [];
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    const item = ordered[(offset + index) % ordered.length];
+    const summary = await extractItemNameAndPrice(item);
+    attempted.push(summary.itemName);
+    await item.scrollIntoViewIfNeeded().catch(() => {});
+    await item.click();
+    await waitForAppReady(page);
+
+    if (await hasModifierSignals(page)) {
+      console.log(`[order] Modifier item selected: ${summary.itemName}`);
+      return summary;
+    }
+
+    await returnToMenuAfterItemInspection(page, menuUrl);
+  }
+
+  throw new Error(`Could not find an available item with modifiers in the selected menu. Tried: ${attempted.join(', ') || '(none)'}`);
+}
+
 async function availableItemCandidates(page: Page, excludeRiskyRandomItems = false) {
   const itemCards = page.locator('[data-testid*="item" i], [aria-label*="$"], .MuiCard-root', { hasText: /\$\s*\d/ });
   const candidates: Locator[] = [];
@@ -449,6 +486,48 @@ async function availableItemCandidates(page: Page, excludeRiskyRandomItems = fal
     }
   }
   return candidates;
+}
+
+async function hasModifierSignals(page: Page) {
+  const addButton = page.getByRole('button', { name: /add to check|add to cart|add item|add/i }).first();
+  if (await isVisible(addButton, 1_000) && !(await addButton.isEnabled().catch(() => true))) {
+    return true;
+  }
+
+  const optionControls = page
+    .locator('label, [role="checkbox"], [role="radio"], input[type="checkbox"], input[type="radio"]')
+    .filter({ hasNotText: /pickup|delivery|meal credit|cash|card/i });
+  const count = await optionControls.count();
+  for (let index = 0; index < count; index += 1) {
+    const option = optionControls.nth(index);
+    const text = compact(await option.innerText().catch(() => ''));
+    if (await isVisible(option, 500) && text && !isChromeOrActionText(text)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function returnToMenuAfterItemInspection(page: Page, menuUrl: string) {
+  const close = page.getByRole('button', { name: /close|back|cancel/i }).first();
+  if (await isVisible(close, 1_000)) {
+    await close.click();
+    await waitForAppReady(page);
+    if (await hasItemSignals(page)) {
+      return;
+    }
+  }
+
+  await page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
+  if (await hasItemSignals(page)) {
+    return;
+  }
+
+  await page.goto(menuUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await waitForAppReady(page);
+  await findPricedItemsWithScroll(page);
 }
 
 function isRiskyRandomOrderItem(text: string) {
