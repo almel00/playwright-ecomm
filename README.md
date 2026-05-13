@@ -144,6 +144,12 @@ npm run test:resident-ordering -- --headed --slow-mo=500
 
 Headed Chromium starts maximized with a `1920x1080` window size to reduce overlap with floating controls.
 
+Keep the browser open for step-by-step debugging:
+
+```powershell
+npm run test:resident-ordering:debug
+```
+
 Non-ordering focused coverage:
 
 ```powershell

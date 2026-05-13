@@ -145,6 +145,18 @@ async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
     return 'Direct menu';
   }
 
+  if (config.targetRevenueCenter) {
+    const targeted = await clickTargetCardIfVisible(page, config.targetRevenueCenter);
+    if (targeted) {
+      await waitForAppReady(page);
+      await failIfReturnedToLogin(page, config.targetRevenueCenter);
+      if (await hasMenuSignals(page)) {
+        console.log(`[order] Revenue center selected: ${config.targetRevenueCenter}`);
+        return config.targetRevenueCenter;
+      }
+    }
+  }
+
   const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetRevenueCenter);
   for (const candidate of candidates) {
     const text = compact(await candidate.innerText().catch(() => ''));
@@ -165,6 +177,18 @@ async function selectRevenueCenterIfPresent(page: Page, config: RuntimeConfig) {
 }
 
 async function selectMenu(page: Page, config: RuntimeConfig) {
+  if (config.targetMenu) {
+    const targeted = await clickTargetCardIfVisible(page, config.targetMenu);
+    if (targeted) {
+      await waitForAppReady(page);
+      await failIfReturnedToLogin(page, config.targetMenu);
+      if (await hasItemSignals(page)) {
+        console.log(`[order] Menu selected: ${config.targetMenu}`);
+        return config.targetMenu;
+      }
+    }
+  }
+
   const candidates = await orderCandidates(await visibleChoiceCandidates(page), config, config.targetMenu);
   for (const candidate of candidates) {
     const text = compact(await candidate.innerText().catch(() => ''));
@@ -181,6 +205,20 @@ async function selectMenu(page: Page, config: RuntimeConfig) {
     }
   }
   throw new Error('Could not find a visible menu with items.');
+}
+
+async function clickTargetCardIfVisible(page: Page, targetText: string) {
+  const target = page
+    .locator('.cardAreaMenu, .MuiCardActionArea-root')
+    .filter({ hasText: new RegExp(`^\\s*${escapeRegex(targetText)}\\s*$`, 'i') })
+    .first();
+
+  if (!(await isVisible(target, 2_000))) {
+    return false;
+  }
+
+  await target.click();
+  return true;
 }
 
 async function failIfReturnedToLogin(page: Page, clickedText: string) {

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "playwright test",
     "test:resident-ordering": "playwright test tests/resident-ordering.spec.ts",
+    "test:resident-ordering:debug": "playwright test tests/resident-ordering.spec.ts --debug",
     "test:coverage": "playwright test tests/auth.spec.ts tests/menu-coverage.spec.ts",
     "test:all": "playwright test",
     "test:profile": "playwright test",
