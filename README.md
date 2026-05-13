@@ -210,9 +210,21 @@ npm run report
 
 That opens the latest generated nested HTML report.
 
-## CI
+## GitHub Runner
 
-GitHub Actions is configured in `.github/workflows/playwright.yml`. Add these repository secrets for the default CI target:
+GitHub Actions is configured as the first version of the test runner dashboard.
+
+### One-Time Site Setup
+
+In GitHub, create one **Environment** per ecomm site:
+
+```text
+abc
+canterbury
+client-a
+```
+
+For each Environment, add these secrets:
 
 ```text
 BASE_URL
@@ -221,6 +233,67 @@ RESIDENT_ROOM
 RESIDENT_PIN
 ```
 
-The CI workflow runs the main resident ordering test and uploads Playwright artifacts.
+Optional Environment secrets:
 
-For multiple CI targets, create separate GitHub environments or duplicate workflow jobs with different secret sets, for example `abc`, `client-a`, and `client-b`.
+```text
+INVALID_RESIDENT_FIRST_NAME
+INVALID_RESIDENT_ROOM
+INVALID_RESIDENT_PIN
+```
+
+Optional Environment variables:
+
+```text
+SITE_NAME
+SELECTION_MODE
+TARGET_REVENUE_CENTER
+TARGET_MENU
+TARGET_ITEM
+KITCHEN_MESSAGE
+RUN_SEARCH_TEST
+SEARCH_ITEM_NAME
+RUN_MULTI_ITEM_ORDER
+RUN_PAYMENT_FAILURE_TEST
+```
+
+Create a repository variable for scheduled runs:
+
+```text
+DEFAULT_TEST_ENVIRONMENT=abc
+```
+
+### Manual Run
+
+Use GitHub as the runner UI:
+
+1. Open the repository in GitHub.
+2. Go to **Actions**.
+3. Select **Resident Ordering Tests**.
+4. Click **Run workflow**.
+5. Choose the Environment/site.
+6. Choose the test suite:
+   - `resident-ordering`
+   - `coverage`
+   - `all`
+7. Click **Run workflow**.
+
+The run uploads artifacts containing:
+
+```text
+test-results/reports
+test-results/order-summary.json
+```
+
+The workflow summary also prints the latest order summary when an order was submitted.
+
+### Daily Runs
+
+The workflow is scheduled daily at `12:00 UTC`.
+
+Scheduled runs use:
+
+```text
+DEFAULT_TEST_ENVIRONMENT
+```
+
+and run the `resident-ordering` suite.

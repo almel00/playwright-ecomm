@@ -1,34 +1,133 @@
-name: Playwright
+name: Resident Ordering Tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      target_environment:
+        description: GitHub Environment/site to test
+        required: true
+        type: environment
+      test_suite:
+        description: Test suite to run
+        required: true
+        default: resident-ordering
+        type: choice
+        options:
+          - resident-ordering
+          - coverage
+          - all
+      selection_mode:
+        description: Selection mode for dynamic revenue center/menu/item choice
+        required: true
+        default: first
+        type: choice
+        options:
+          - first
+          - random
+      run_search_test:
+        description: Run item search coverage
+        required: true
+        default: false
+        type: boolean
+      run_multi_item_order:
+        description: Run multi-item order coverage; places an extra order
+        required: true
+        default: false
+        type: boolean
+      run_payment_failure_test:
+        description: Run checkout/payment edge-case inspection; does not submit
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: '0 12 * * *'
 
 jobs:
   test:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }} / ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }}
     env:
       BASE_URL: ${{ secrets.BASE_URL }}
+      SITE_NAME: ${{ vars.SITE_NAME }}
       RESIDENT_FIRST_NAME: ${{ secrets.RESIDENT_FIRST_NAME }}
       RESIDENT_ROOM: ${{ secrets.RESIDENT_ROOM }}
       RESIDENT_PIN: ${{ secrets.RESIDENT_PIN }}
-      SELECTION_MODE: first
+      INVALID_RESIDENT_FIRST_NAME: ${{ secrets.INVALID_RESIDENT_FIRST_NAME }}
+      INVALID_RESIDENT_ROOM: ${{ secrets.INVALID_RESIDENT_ROOM }}
+      INVALID_RESIDENT_PIN: ${{ secrets.INVALID_RESIDENT_PIN }}
+      SELECTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.selection_mode || vars.SELECTION_MODE || 'first' }}
+      TARGET_REVENUE_CENTER: ${{ vars.TARGET_REVENUE_CENTER }}
+      TARGET_MENU: ${{ vars.TARGET_MENU }}
+      TARGET_ITEM: ${{ vars.TARGET_ITEM }}
+      KITCHEN_MESSAGE: ${{ vars.KITCHEN_MESSAGE || 'Servingintel test. Please do not make!' }}
+      RUN_SEARCH_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_search_test) || vars.RUN_SEARCH_TEST || 'false' }}
+      SEARCH_ITEM_NAME: ${{ vars.SEARCH_ITEM_NAME }}
+      RUN_MULTI_ITEM_ORDER: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_multi_item_order) || vars.RUN_MULTI_ITEM_ORDER || 'false' }}
+      RUN_PAYMENT_FAILURE_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_payment_failure_test) || vars.RUN_PAYMENT_FAILURE_TEST || 'false' }}
+      REPORT_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:resident-ordering
-      - uses: actions/upload-artifact@v4
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Select test command
+        run: |
+          case "${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}" in
+            resident-ordering)
+              echo "TEST_COMMAND=npm run test:resident-ordering" >> "$GITHUB_ENV"
+              ;;
+            coverage)
+              echo "TEST_COMMAND=npm run test:coverage" >> "$GITHUB_ENV"
+              ;;
+            all)
+              echo "TEST_COMMAND=npm run test:all" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported test suite"
+              exit 1
+              ;;
+          esac
+
+      - name: Run Playwright
+        run: $TEST_COMMAND
+
+      - name: Write run summary
+        if: always()
+        run: |
+          {
+            echo "## Resident Ordering Test Run"
+            echo ""
+            echo "- Environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }}"
+            echo "- Suite: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'resident-ordering' }}"
+            echo "- Site: ${SITE_NAME:-$BASE_URL}"
+            echo "- Report root: test-results/reports"
+            echo ""
+            if [ -f test-results/order-summary.json ]; then
+              echo "### Latest Order Summary"
+              echo '```json'
+              cat test-results/order-summary.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report artifacts
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: resident-ordering-${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || vars.DEFAULT_TEST_ENVIRONMENT || 'default-site' }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            playwright-report
-            test-results
+            test-results/reports
+            test-results/order-summary.json
+          if-no-files-found: warn
