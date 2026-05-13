@@ -95,7 +95,7 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   const transactionText = await (await isVisible(dialog, 2_000) ? dialog.innerText() : page.locator('body').innerText());
   expect(transactionText).toContain(checkoutSummary.itemName);
   if (!transactionText.includes(checkoutSummary.kitchenMessage)) {
-    console.log('[transactions] Transaction detail did not render the kitchen message; submit payload validation already confirmed it was sent');
+    console.log(`[transactions] Transaction detail did not render the kitchen message; submit payload included message: ${checkoutSummary.kitchenMessageSubmitted === true}`);
   }
   checkoutSummary.transactionKitchenMessageVisible = transactionText.includes(checkoutSummary.kitchenMessage);
 

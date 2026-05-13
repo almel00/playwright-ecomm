@@ -61,7 +61,7 @@ export async function logoutResident(page: Page) {
 
   await waitForAppReady(page);
   await dismissOptionalDialog(page);
-  await expect(page.getByRole('textbox', { name: /first name/i })).toBeVisible({ timeout: 30_000 });
+  await expectLoggedOut(page);
 }
 
 export async function dismissOptionalDialog(page: Page) {
@@ -137,6 +137,18 @@ async function expectResidentOrderingReady(page: Page) {
     const bodyText = await page.locator('body').innerText().catch(() => '');
     throw new Error(`Resident login did not reach ordering/menu screen after PIN entry. Current page text starts with: ${bodyText.slice(0, 500)}`);
   });
+}
+
+async function expectLoggedOut(page: Page) {
+  await expect(page.getByText(/hello\. please log into your account\./i)).toBeVisible({ timeout: 30_000 });
+
+  const namedFirstName = page.getByRole('textbox', { name: /first name/i });
+  if (await isVisible(namedFirstName, 1_000)) {
+    return;
+  }
+
+  await expect(page.locator('input').first(), 'Logged-out page should show the first-name input').toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('input').nth(1), 'Logged-out page should show the room input').toBeVisible({ timeout: 30_000 });
 }
 
 async function isOnPinScreen(page: Page) {
