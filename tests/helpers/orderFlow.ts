@@ -311,7 +311,7 @@ async function hasItemSignals(page: Page) {
 }
 
 function isChromeOrActionText(text: string) {
-  return /login|logout|log out|privacy|terms|checkout|cart|profile|transactions|in-?room ordering|^menu$|close|ok/i.test(text);
+  return /login|logout|log out|not .*ava|forgot|change pin|privacy|terms|checkout|cart|profile|transactions|in-?room ordering|^menu$|close|ok/i.test(text);
 }
 
 function dedupeModifiers(modifiers: ModifierSummary[]) {

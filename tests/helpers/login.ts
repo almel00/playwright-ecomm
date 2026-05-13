@@ -25,7 +25,7 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   await waitForAppReady(page);
 
   await dismissOptionalDialog(page);
-  await expect(page.getByRole('textbox', { name: /first name/i })).toBeHidden({ timeout: 20_000 });
+  await expectResidentOrderingReady(page);
 }
 
 export async function logoutResident(page: Page) {
@@ -66,4 +66,23 @@ export async function isVisible(locator: ReturnType<Page['locator']>, timeout = 
   } catch {
     return false;
   }
+}
+
+async function expectResidentOrderingReady(page: Page) {
+  await page.waitForFunction(() => {
+    const bodyText = document.body.innerText.toLowerCase();
+    const stillOnPinScreen = bodyText.includes('please enter your pin') || bodyText.includes('enter pin');
+    const hasOrderingSignal =
+      bodyText.includes('in-room ordering') ||
+      bodyText.includes('in room ordering') ||
+      bodyText.includes('my transactions') ||
+      bodyText.includes('menu') ||
+      bodyText.includes('checkout') ||
+      /\$\s*\d/.test(bodyText);
+
+    return hasOrderingSignal && !stillOnPinScreen;
+  }, null, { timeout: 30_000 }).catch(async () => {
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    throw new Error(`Resident login did not reach ordering/menu screen after PIN entry. Current page text starts with: ${bodyText.slice(0, 500)}`);
+  });
 }
