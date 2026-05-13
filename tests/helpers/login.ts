@@ -25,8 +25,11 @@ export async function loginResident(page: Page, credentials: ResidentCredentials
   if (await isOnPinScreen(page) && await isVisible(visiblePinInput, 2_000)) {
     console.log('[login] PIN screen still visible after submit; retrying PIN once');
     await enterPin(page, credentials.pin);
-    await page.getByRole('button', { name: /^login$/i }).click();
-    await waitForAppReady(page);
+    const loginButton = page.getByRole('button', { name: /^login$/i }).first();
+    if (await isVisible(loginButton, 2_000)) {
+      await loginButton.click();
+      await waitForAppReady(page);
+    }
   }
 
   await dismissOptionalDialog(page);
