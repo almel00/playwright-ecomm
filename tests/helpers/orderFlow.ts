@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { getRuntimeConfig, type RuntimeConfig } from './config';
-import { compact, extractCheckoutSummary, extractItemNameAndPrice, moneyFromText, parseTransactionSummary, type ItemSummary, type ModifierSummary, type OrderSummary } from './orderTotals';
+import { allMoneyFromText, compact, extractCheckoutSummary, extractItemNameAndPrice, moneyFromText, parseTransactionSummary, transactionMatchesCheckout, validateCheckoutDetails, validateSubmissionPayload, type ItemSummary, type ModifierSummary, type OrderSummary, type TransactionLineSummary } from './orderTotals';
 import { dismissOptionalDialog, isVisible, waitForAppReady } from './login';
 
 export type OrderFlowOptions = {
@@ -46,7 +46,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
     await addKitchenMessage(page, config.kitchenMessage);
   }
 
-  await choosePaymentIfNeeded(page);
+  const selectedPaymentType = await choosePaymentIfNeeded(page);
 
   console.log('[checkout] Capturing subtotal, tax, and total');
   const summary = await extractCheckoutSummary(page, {
@@ -64,16 +64,24 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
     items,
     kitchenMessage: config.kitchenMessage,
   });
+  summary.checkoutPaymentType = selectedPaymentType || await readCheckoutPaymentType(page);
+  summary.checkoutLineItems = await readCheckoutLineItems(page);
+  applyCheckoutLineItems(summary);
+  validateCheckoutDetails(summary);
 
   if (options.placeOrder === false) {
     return summary;
   }
 
   console.log('[checkout] Placing order');
-  const kitchenMessageSubmission = waitForKitchenMessageSubmission(page, config.kitchenMessage);
+  const orderSubmissionPayloads = captureMutationPayloads(page);
   const orderSubmissionState = waitForOrderSubmissionState(page);
   await clickButtonByName(page, /submit order|place order|confirm order|complete order/i);
-  const submittedKitchenMessage = await kitchenMessageSubmission;
+  await page.waitForTimeout(1_000);
+  const submissionPayload = bestSubmissionPayload(orderSubmissionPayloads, summary);
+  summary.submissionPayloadText = submissionPayload;
+  validateSubmissionPayload(summary);
+  const submittedKitchenMessage = payloadIncludes(submissionPayload, config.kitchenMessage);
   summary.kitchenMessageSubmitted = submittedKitchenMessage;
   if (!submittedKitchenMessage) {
     console.log('[checkout] Message to Kitchen was filled, but it was not found in the order submission payload');
@@ -81,6 +89,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   await waitForAppReady(page);
   await orderSubmissionState;
   await dismissOptionalDialog(page);
+  summary.orderId ||= findOrderIdInText(await page.locator('body').innerText().catch(() => ''));
 
   return summary;
 }
@@ -92,19 +101,14 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   await waitForAppReady(page);
   await resetAppZoom(page);
 
-  console.log('[transactions] Opening latest transaction row');
-  await openLatestTransaction(page, checkoutSummary);
-  await waitForAppReady(page);
-
-  const dialog = page.getByRole('dialog').first();
-  const transactionText = await (await isVisible(dialog, 2_000) ? dialog.innerText() : page.locator('body').innerText());
-  expect(transactionText).toContain(checkoutSummary.itemName);
+  console.log('[transactions] Finding submitted transaction row');
+  const transactionSummary = await openMatchingTransaction(page, checkoutSummary);
+  const transactionText = transactionSummary.transactionDetailText ?? '';
   if (!transactionText.includes(checkoutSummary.kitchenMessage)) {
     console.log(`[transactions] Transaction detail did not render the kitchen message; submit payload included message: ${checkoutSummary.kitchenMessageSubmitted === true}`);
   }
   checkoutSummary.transactionKitchenMessageVisible = transactionText.includes(checkoutSummary.kitchenMessage);
 
-  const transactionSummary = parseTransactionSummary(transactionText, checkoutSummary);
   const close = page.getByRole('button', { name: /close|ok/i }).first();
   if (await isVisible(close, 1_000)) {
     await close.click();
@@ -117,25 +121,11 @@ export async function verifyTransaction(page: Page, checkoutSummary: OrderSummar
   return transactionSummary;
 }
 
-async function openLatestTransaction(page: Page, checkoutSummary: OrderSummary) {
-  const latestRow = await waitForLatestTransactionRow(page);
-  const rowText = compact(await latestRow.innerText());
-  console.log(`[transactions] Latest row: ${rowText}`);
-  expect(rowText, 'Latest transaction row should show the checkout total').toMatch(moneyPattern(checkoutSummary.total));
-
-  const rowButton = latestRow.getByRole('button').first();
-  if (await isVisible(rowButton, 1_000)) {
-    await rowButton.click();
-    return;
-  }
-
-  await latestRow.click({ force: true });
-}
-
-async function waitForLatestTransactionRow(page: Page) {
+async function openMatchingTransaction(page: Page, checkoutSummary: OrderSummary) {
   const timeoutMs = 90_000;
   const startedAt = Date.now();
   let attempt = 0;
+  const inspectedRows: string[] = [];
 
   while (Date.now() - startedAt < timeoutMs) {
     attempt += 1;
@@ -143,9 +133,44 @@ async function waitForLatestTransactionRow(page: Page) {
     await resetAppZoom(page);
 
     const table = page.locator('table').first();
-    const latestRow = transactionRows(page).first();
-    if (await isVisible(table, 3_000) && await isVisible(latestRow, 3_000)) {
-      return latestRow;
+    const rows = transactionRows(page);
+    if (await isVisible(table, 3_000) && await isVisible(rows.first(), 3_000)) {
+      const rowCount = await rows.count();
+      for (let index = 0; index < Math.min(rowCount, 12); index += 1) {
+        const row = rows.nth(index);
+        const rowText = compact(await row.innerText().catch(() => ''));
+        if (!moneyPattern(checkoutSummary.total).test(rowText)) {
+          continue;
+        }
+
+        inspectedRows.push(rowText);
+        console.log(`[transactions] Inspecting candidate row: ${rowText}`);
+        const opened = await openTransactionRow(page, row);
+        if (!opened) {
+          console.log(`[transactions] Candidate row did not open transaction details: ${rowText}`);
+          continue;
+        }
+        await waitForAppReady(page);
+
+        const dialog = page.getByRole('dialog').first();
+        await expect(dialog, 'Transaction details dialog should open after selecting transaction row').toBeVisible({ timeout: 5_000 });
+        const transactionText = await dialog.innerText();
+        const transactionSummary = parseTransactionSummary(transactionText, checkoutSummary);
+        const transactionLineItems = await readLineItems(await isVisible(dialog, 1_000) ? dialog : page.locator('body'));
+        if (transactionLineItems.length > 0) {
+          transactionSummary.transactionLineItems = transactionLineItems;
+        }
+        if (transactionMatchesCheckout(checkoutSummary, transactionSummary) || rowMatchesCheckout(rowText, checkoutSummary)) {
+          return transactionSummary;
+        }
+
+        console.log(`[transactions] Candidate row did not match checkout detail; check=${transactionSummary.transactionCheckNumber || '(none)'}`);
+        const close = page.getByRole('button', { name: /close|ok/i }).first();
+        if (await isVisible(close, 1_000)) {
+          await close.click();
+          await waitForAppReady(page);
+        }
+      }
     }
 
     const bodyText = compact(await page.locator('body').innerText().catch(() => ''));
@@ -162,7 +187,120 @@ async function waitForLatestTransactionRow(page: Page) {
     }
   }
 
-  throw new Error(`Transactions table did not load within ${timeoutMs / 1000} seconds after order submission. Current URL: ${page.url()}`);
+  throw new Error(`Could not find a transaction matching checkout total and item details within ${timeoutMs / 1000} seconds. Inspected rows: ${inspectedRows.join(' || ') || '(none)'}. Current URL: ${page.url()}`);
+}
+
+async function openTransactionRow(page: Page, row: Locator) {
+  await row.scrollIntoViewIfNeeded().catch(() => {});
+  const dialog = page.getByRole('dialog').first();
+  const clickTargets = [
+    row.getByRole('button').first(),
+    row.locator('td, [role="cell"]').first(),
+    row,
+  ];
+
+  for (const target of clickTargets) {
+    if (!(await isVisible(target, 1_000))) {
+      continue;
+    }
+
+    await target.click({ force: true }).catch(() => {});
+    if (await isVisible(dialog, 2_000)) {
+      return true;
+    }
+  }
+
+  await row.dblclick({ force: true }).catch(() => {});
+  return isVisible(dialog, 2_000);
+}
+
+async function readLineItems(scope: Locator): Promise<TransactionLineSummary[]> {
+  const tableRows = scope
+    .locator('table tbody tr, [role="table"] [role="row"], [role="row"]')
+    .filter({ hasText: /\$\s*\d/ });
+  const rows: TransactionLineSummary[] = [];
+  const count = await tableRows.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const row = tableRows.nth(index);
+    const cells = row.locator('td, [role="cell"]');
+    if (await cells.count() < 4) {
+      continue;
+    }
+
+    const quantityText = compact(await cells.nth(0).innerText().catch(() => ''));
+    const description = compact(await cells.nth(1).innerText().catch(() => ''));
+    const unitPrice = moneyFromText(await cells.nth(2).innerText().catch(() => ''));
+    const totalPrice = moneyFromText(await cells.nth(3).innerText().catch(() => ''));
+    const quantity = Number(quantityText);
+
+    if (!Number.isFinite(quantity) || !description || unitPrice === null || totalPrice === null) {
+      continue;
+    }
+
+    rows.push({ quantity, description, unitPrice, totalPrice });
+  }
+
+  return rows;
+}
+
+async function readCheckoutLineItems(page: Page): Promise<TransactionLineSummary[]> {
+  const rows = page.locator('table').first().locator('tr, [role="row"]').filter({ hasText: /\$\s*\d/ });
+  const lineItems: TransactionLineSummary[] = [];
+  const count = await rows.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const row = rows.nth(index);
+    const rowText = compact(await row.innerText().catch(() => ''));
+    if (/subtotal|tax|discount|amount due|tip|service fee/i.test(rowText)) {
+      continue;
+    }
+
+    const cells = row.locator('td, th, [role="cell"], [role="columnheader"]');
+    if (await cells.count() < 3) {
+      continue;
+    }
+
+    const descriptionText = compact(await cells.nth(1).innerText().catch(() => ''));
+    const quantityText = compact(await cells.nth(2).innerText().catch(() => ''));
+    const prices = allMoneyFromText(rowText);
+    const quantity = Number(quantityText.match(/\d+/)?.[0] ?? 1);
+    const totalPrice = prices.at(-1);
+    if (!descriptionText || totalPrice === undefined || !Number.isFinite(quantity)) {
+      continue;
+    }
+
+    const description = cleanCheckoutDescription(descriptionText);
+    lineItems.push({
+      quantity,
+      description,
+      unitPrice: totalPrice / quantity,
+      totalPrice,
+    });
+  }
+
+  return lineItems;
+}
+
+function applyCheckoutLineItems(summary: OrderSummary) {
+  if (!summary.checkoutLineItems || summary.checkoutLineItems.length === 0) {
+    return;
+  }
+
+  summary.items = summary.checkoutLineItems.map((line, index) => ({
+    name: line.description || summary.items[index]?.name || summary.itemName,
+    price: line.unitPrice,
+    modifiers: summary.items[index]?.modifiers ?? [],
+  }));
+  summary.itemName = summary.items[0]?.name ?? summary.itemName;
+  summary.itemPrice = summary.items[0]?.price ?? summary.itemPrice;
+}
+
+function cleanCheckoutDescription(value: string) {
+  return compact(value
+    .replace(/\$?\s*-?\d+(?:\.\d{1,2})?/g, ' ')
+    .replace(/add special instructions.*$/i, ' ')
+    .replace(/\s+-\s*$/g, ' '));
 }
 
 async function openTransactionsPage(page: Page) {
@@ -636,18 +774,28 @@ async function addKitchenMessage(page: Page, message: string) {
   await page.waitForTimeout(500);
 }
 
-async function waitForKitchenMessageSubmission(page: Page, message: string) {
-  return page.waitForRequest((request) => {
+function captureMutationPayloads(page: Page) {
+  const payloads: string[] = [];
+  page.on('request', (request) => {
     const method = request.method().toUpperCase();
     if (!['POST', 'PUT', 'PATCH'].includes(method)) {
-      return false;
+      return;
     }
 
     const postData = request.postData() ?? '';
-    return postData.includes(message) || decodeURIComponent(postData).includes(message);
-  }, { timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false);
+    if (postData.trim()) {
+      payloads.push(postData);
+    }
+  });
+  return payloads;
+}
+
+function bestSubmissionPayload(payloads: string[], summary: OrderSummary) {
+  return payloads.find((payload) => payloadIncludes(payload, summary.kitchenMessage))
+    ?? payloads.find((payload) => payloadIncludesMoney(payload, summary.total))
+    ?? payloads.find((payload) => payloadIncludesMoney(payload, summary.subtotal))
+    ?? payloads.at(-1)
+    ?? '';
 }
 
 async function waitForOrderSubmissionState(page: Page) {
@@ -669,7 +817,9 @@ async function choosePaymentIfNeeded(page: Page) {
   if (await isVisible(mealCredit, 2_000)) {
     await mealCredit.click();
     await waitForAppReady(page);
+    return 'Meal Credit';
   }
+  return null;
 }
 
 async function clickButtonByName(page: Page, name: RegExp) {
@@ -900,4 +1050,52 @@ function escapeRegex(value: string) {
 
 function moneyPattern(value: number) {
   return new RegExp(`\\$\\s*${escapeRegex(value.toFixed(2))}`);
+}
+
+function rowMatchesCheckout(rowText: string, checkoutSummary: OrderSummary) {
+  const normalizedRowText = rowText.replace(/\b([A-Za-z]{3,9})\.\s+/g, '$1 ');
+  const dateText = normalizedRowText.match(/\b[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\b/)?.[0]
+    ?? normalizedRowText.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/)?.[0]
+    ?? normalizedRowText.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0]
+    ?? '';
+  const rowDate = new Date(dateText);
+  const rowDateMatches = !Number.isNaN(rowDate.getTime()) && rowDate.toISOString().slice(0, 10) === checkoutSummary.reportDate;
+  return rowDateMatches && moneyPattern(checkoutSummary.total).test(rowText);
+}
+
+async function readCheckoutPaymentType(page: Page) {
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const paymentType = bodyText.match(/payment\s*type\s*:?\s*([^\r\n]+)/i)?.[1]
+    ?? bodyText.match(/\b(direct billing|meal credit|credit card|cash|room charge)\b/i)?.[1]
+    ?? '';
+  return compact(paymentType);
+}
+
+function payloadIncludes(payload: string, value: string) {
+  if (!value) {
+    return false;
+  }
+  const decodedPayload = decodePayload(payload).toLowerCase();
+  return decodedPayload.includes(value.toLowerCase()) || decodedPayload.includes(encodeURIComponent(value).toLowerCase());
+}
+
+function payloadIncludesMoney(payload: string, value: number) {
+  const decodedPayload = decodePayload(payload);
+  const rounded = Math.round(value * 100) / 100;
+  const dollars = rounded.toFixed(2);
+  const flexibleDollars = String(rounded);
+  const cents = String(Math.round(rounded * 100));
+  return decodedPayload.includes(dollars) || decodedPayload.includes(flexibleDollars) || decodedPayload.includes(cents);
+}
+
+function decodePayload(payload: string) {
+  try {
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+}
+
+function findOrderIdInText(text: string) {
+  return text.match(/(?:check\s*#|order\s*(?:#|id|number)|confirmation\s*(?:#|id|number)|transaction\s*(?:#|id|number))\s*:?\s*([A-Z0-9-]*\d[A-Z0-9-]*)/i)?.[1] ?? '';
 }

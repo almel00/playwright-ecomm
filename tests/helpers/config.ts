@@ -37,7 +37,7 @@ export function getRuntimeConfig(): RuntimeConfig {
     targetRevenueCenter: optionalEnv('TARGET_REVENUE_CENTER'),
     targetMenu: optionalEnv('TARGET_MENU'),
     targetItem: optionalEnv('TARGET_ITEM'),
-    kitchenMessage: process.env.KITCHEN_MESSAGE || 'Servingintel test. Please do not make!',
+    kitchenMessage: process.env.KITCHEN_MESSAGE || 'Automated Test. Please do not make!',
     runModifierItemOrder: booleanEnv('RUN_MODIFIER_ITEM_ORDER'),
     runMultiItemOrder: booleanEnv('RUN_MULTI_ITEM_ORDER'),
     runPaymentFailureTest: booleanEnv('RUN_PAYMENT_FAILURE_TEST'),

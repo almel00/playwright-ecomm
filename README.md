@@ -17,11 +17,12 @@ Default coverage proves that a resident can:
 3. Dynamically select a revenue center, menu, available item, and modifiers.
 4. Add one item to an order.
 5. Checkout with a kitchen message.
-6. Validate subtotal, tax, and total math.
+6. Validate checkout quantity rows, item/modifier subtotal, tip, tax, service fee, discount, selected payment type, and total math.
 7. Place the order.
-8. Find and open the order in My Transactions.
-9. Validate item, modifiers, kitchen message, and total.
-10. Return to In Room Ordering and log out.
+8. Capture and validate the order submission payload.
+9. Find and open the matching order in My Transactions.
+10. Validate transaction details against checkout: check number, date, payment type, quantity rows, items, item prices, modifiers, subtotal, tip, tax, service fee, discount, kitchen message, and total.
+11. Return to In Room Ordering and log out.
 
 Additional specs cover login/logout, invalid login, item search, mobile menu navigation, sold-out item detection, multi-item ordering, and checkout/payment edge-case inspection when the needed env flags or fixture data are provided.
 
@@ -137,6 +138,19 @@ INVALID_RESIDENT_PIN=
 
 When `RUN_SEARCH_TEST=true`, the search test uses `SEARCH_ITEM_NAME` if provided. If it is blank, the test discovers a visible item name and searches for that. `RUN_MODIFIER_ITEM_ORDER=true` places an additional real order and requires the selected item to expose modifiers. Use `TARGET_MODIFIER_ITEM` when you know a specific modifier item; otherwise the test scans the selected menu for one. `RUN_MULTI_ITEM_ORDER=true` places an additional real order. `RUN_PAYMENT_FAILURE_TEST=true` stops at checkout and does not submit.
 
+Optional financial rule checks can be configured when a site has known expected rules:
+
+```text
+EXPECTED_TIP_AMOUNT=
+EXPECTED_TAX_RATE=
+EXPECTED_SERVICE_FEE_AMOUNT=
+EXPECTED_SERVICE_FEE_RATE=
+EXPECTED_DISCOUNT_AMOUNT=
+EXPECTED_DISCOUNT_RATE=
+```
+
+Rates can be decimals such as `0.0825` or percents such as `8.25%`. If these are blank, the test validates displayed math and checkout-vs-transaction consistency, but it does not claim a tax/fee/discount business rule is correct.
+
 ## Run
 
 Main end-to-end order test:
@@ -177,7 +191,7 @@ Latest order summary:
 test-results/order-summary.json
 ```
 
-The summary includes site name, base URL, env profile, report folder, selected revenue center, menu, item, modifiers, subtotal, tax, total, kitchen message, order id when visible, selection mode, and transaction comparison status.
+The summary includes site name, base URL, env profile, report folder, selected revenue center, menu, item, modifiers, checkout line items, payment type, subtotal, tip, tax, service fee, discount, total, submission payload status, kitchen message, order id when visible, selection mode, and transaction comparison status.
 
 ## Daily Reports
 
@@ -279,6 +293,12 @@ RUN_MODIFIER_ITEM_ORDER
 TARGET_MODIFIER_ITEM
 RUN_MULTI_ITEM_ORDER
 RUN_PAYMENT_FAILURE_TEST
+EXPECTED_TIP_AMOUNT
+EXPECTED_TAX_RATE
+EXPECTED_SERVICE_FEE_AMOUNT
+EXPECTED_SERVICE_FEE_RATE
+EXPECTED_DISCOUNT_AMOUNT
+EXPECTED_DISCOUNT_RATE
 ```
 
 Create a repository variable for scheduled runs:

@@ -23,17 +23,18 @@ The main test follows the same basic path a resident would take:
 9. Adds this kitchen message:
 
    ```text
-   Servingintel automation test. Please do not make!
+   Automated Test. Please do not make!
    ```
 
-10. Checks the displayed subtotal, tax, and total.
+10. Checks the displayed checkout quantity rows, item/modifier subtotal, tip, tax, service fee, discount, selected payment type, and total.
 11. Places the order.
-12. Opens My Transactions.
-13. Confirms the order appears there.
-14. Opens the transaction details.
-15. Confirms the item, modifiers, kitchen message, and total are shown correctly.
-16. Returns to In-room Ordering.
-17. Logs out.
+12. Captures and validates the order submission payload.
+13. Opens My Transactions.
+14. Finds the matching transaction row.
+15. Opens the transaction details.
+16. Confirms the transaction details match checkout, including check number, date, payment type, quantity rows, items, item prices, modifiers, subtotal, tip, tax, service fee, discount, kitchen message, and total.
+17. Returns to In-room Ordering.
+18. Logs out.
 
 ## How Menu Selection Works
 
@@ -61,10 +62,14 @@ The test validates:
 - The item can be added to the order.
 - Checkout can be opened.
 - The kitchen message can be added.
-- Subtotal plus tax equals total.
+- Checkout quantity rows match the selected items and modifiers when checkout exposes parseable rows.
+- Item prices plus modifier prices equal subtotal.
+- Subtotal plus tip plus tax plus service fee minus discount equals total.
+- The submitted order request payload is captured and includes expected total data.
 - The order can be submitted.
 - The submitted order appears in My Transactions.
-- The transaction details match checkout details.
+- The transaction details match checkout details, including check number, date, payment type, quantity rows, ordered items, item prices, modifiers, subtotal, tip, tax, service fee, discount, and total.
+- Optional configured financial rules match, such as expected tax rate, service fee, discount, or tip.
 - The resident can return to ordering and log out.
 
 ## Reports
@@ -101,12 +106,33 @@ The order summary includes:
 - Item selected.
 - Item price.
 - Modifier names and prices, if any.
+- Checkout quantity rows, if shown.
+- Payment type, if shown.
 - Subtotal.
+- Tip, if shown.
 - Tax, if shown.
+- Service fee, if shown.
+- Discount, if shown.
 - Total.
+- Whether the submission payload was captured and matched.
 - Kitchen message.
 - Order ID if visible.
 - Whether checkout total matched transaction total.
+
+## Optional Financial Rule Checks
+
+If a site has known expected rules, the test can also check those values directly:
+
+```text
+EXPECTED_TIP_AMOUNT
+EXPECTED_TAX_RATE
+EXPECTED_SERVICE_FEE_AMOUNT
+EXPECTED_SERVICE_FEE_RATE
+EXPECTED_DISCOUNT_AMOUNT
+EXPECTED_DISCOUNT_RATE
+```
+
+If these are blank, the test still checks displayed math and checkout-vs-transaction consistency. It does not claim a tax, fee, discount, or tip business rule is correct unless that expected rule is configured.
 
 ## Optional Extra Tests
 

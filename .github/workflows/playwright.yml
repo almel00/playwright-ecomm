@@ -67,7 +67,7 @@ jobs:
       TARGET_REVENUE_CENTER: ${{ vars.TARGET_REVENUE_CENTER }}
       TARGET_MENU: ${{ vars.TARGET_MENU }}
       TARGET_ITEM: ${{ vars.TARGET_ITEM }}
-      KITCHEN_MESSAGE: ${{ vars.KITCHEN_MESSAGE || 'Servingintel test. Please do not make!' }}
+      KITCHEN_MESSAGE: ${{ vars.KITCHEN_MESSAGE || secrets.KITCHEN_MESSAGE || 'Automated Test. Please do not make!' }}
       RUN_SEARCH_TEST: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_search_test) || vars.RUN_SEARCH_TEST || 'false' }}
       SEARCH_ITEM_NAME: ${{ vars.SEARCH_ITEM_NAME }}
       RUN_MODIFIER_ITEM_ORDER: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.run_modifier_item_order) || vars.RUN_MODIFIER_ITEM_ORDER || 'false' }}
