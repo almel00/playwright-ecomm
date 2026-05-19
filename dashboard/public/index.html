@@ -110,7 +110,9 @@
                   <span><i class="legend-dot legend-dot--fail"></i>Failed</span>
                 </div>
               </div>
-              <div class="bar-chart" id="resultBars" aria-label="Run result bars"></div>
+              <div class="chart-frame">
+                <canvas id="resultBars" aria-label="Bar chart showing recent passed and failed runs"></canvas>
+              </div>
             </article>
 
             <article class="chart-card">
@@ -120,7 +122,9 @@
                   <p>Seconds per run</p>
                 </div>
               </div>
-              <div class="spark-chart" id="durationTrend" aria-label="Run duration trend"></div>
+              <div class="chart-frame">
+                <canvas id="durationTrend" aria-label="Line chart showing run duration trend"></canvas>
+              </div>
             </article>
           </section>
 
@@ -221,7 +225,9 @@
                   <p>Completed runs grouped by week</p>
                 </div>
               </div>
-              <div class="line-chart" id="weeklyPassRate"></div>
+              <div class="chart-frame chart-frame--tall">
+                <canvas id="weeklyPassRate" aria-label="Line chart showing weekly pass rate"></canvas>
+              </div>
             </article>
             <article class="chart-card">
               <div class="chart-header">
@@ -242,7 +248,9 @@
                   <p>By run date</p>
                 </div>
               </div>
-              <div class="bar-chart bar-chart--compact" id="averageDuration"></div>
+              <div class="chart-frame chart-frame--compact">
+                <canvas id="averageDuration" aria-label="Bar chart showing average duration by day"></canvas>
+              </div>
             </article>
             <article class="chart-card">
               <div class="chart-header">

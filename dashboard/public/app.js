@@ -93,6 +93,7 @@ document.querySelectorAll('[data-filter-group]').forEach((group) => {
 });
 
 window.addEventListener('hashchange', renderRoute);
+window.addEventListener('resize', debounce(renderCharts, 120));
 
 loadRuns();
 
@@ -300,32 +301,26 @@ function renderCharts() {
 
 function renderResultBars() {
   const runs = state.runs.slice(0, 16).reverse();
-  elements.resultBars.innerHTML = '';
-  runs.forEach((run) => {
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.dataset.state = stateForRun(run);
-    bar.style.height = run.conclusion === 'failure' ? '72%' : stateForRun(run) === 'running' ? '58%' : '92%';
-    const label = document.createElement('span');
-    label.textContent = `#${run.number}`;
-    bar.title = `Run #${run.number}: ${labelForRun(run)}`;
-    bar.append(label);
-    elements.resultBars.append(bar);
+  drawBarChart(elements.resultBars, runs.map((run) => ({
+    label: `#${run.number}`,
+    value: durationSeconds(run) || 1,
+    color: colorForRun(run),
+    softColor: softColorForRun(run),
+  })), {
+    formatYAxis: formatDurationAxis,
+    maxTicks: 4,
   });
 }
 
 function renderDurationBars() {
   const runs = state.runs.slice(0, 16).reverse();
-  const values = runs.map((run) => durationSeconds(run)).filter((value) => value !== null);
-  const max = Math.max(...values, 60);
-  elements.durationTrend.innerHTML = '';
-  runs.forEach((run) => {
-    const seconds = durationSeconds(run) || 0;
-    const point = document.createElement('div');
-    point.className = 'spark-point';
-    point.style.height = `${Math.max(12, Math.round((seconds / max) * 100))}%`;
-    point.title = `Run #${run.number}: ${formatDurationSeconds(seconds)}`;
-    elements.durationTrend.append(point);
+  drawLineChart(elements.durationTrend, runs.map((run) => ({
+    label: `#${run.number}`,
+    value: durationSeconds(run) || 0,
+  })), {
+    color: '#2563eb',
+    fill: 'rgba(37, 99, 235, .10)',
+    formatYAxis: formatDurationAxis,
   });
 }
 
@@ -345,17 +340,15 @@ function renderWeeklyPassRate() {
   });
 
   const entries = Array.from(buckets.entries()).slice(-8);
-  elements.weeklyPassRate.innerHTML = '';
-  entries.forEach(([key, bucket]) => {
+  drawLineChart(elements.weeklyPassRate, entries.map(([key, bucket]) => {
     const rate = bucket.total ? Math.round((bucket.passed / bucket.total) * 100) : 0;
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.style.height = `${Math.max(8, rate)}%`;
-    bar.title = `${key}: ${rate}%`;
-    const label = document.createElement('span');
-    label.textContent = key;
-    bar.append(label);
-    elements.weeklyPassRate.append(bar);
+    return { label: key, value: rate };
+  }), {
+    color: '#2563eb',
+    fill: 'rgba(37, 99, 235, .08)',
+    min: 0,
+    max: 100,
+    formatYAxis: (value) => `${Math.round(value)}%`,
   });
 }
 
@@ -390,19 +383,17 @@ function renderAverageDuration() {
   });
 
   const entries = Array.from(buckets.entries()).slice(-7);
-  const averages = entries.map(([, bucket]) => bucket.total / bucket.count);
-  const max = Math.max(...averages, 60);
-  elements.averageDuration.innerHTML = '';
-  entries.forEach(([key, bucket]) => {
+  drawBarChart(elements.averageDuration, entries.map(([key, bucket]) => {
     const average = Math.round(bucket.total / bucket.count);
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.style.height = `${Math.max(12, Math.round((average / max) * 100))}%`;
-    bar.title = `${key}: ${formatDurationSeconds(average)}`;
-    const label = document.createElement('span');
-    label.textContent = key;
-    bar.append(label);
-    elements.averageDuration.append(bar);
+    return {
+      label: key,
+      value: average,
+      color: '#2563eb',
+      softColor: 'rgba(37, 99, 235, .13)',
+    };
+  }), {
+    formatYAxis: formatDurationAxis,
+    maxTicks: 4,
   });
 }
 
@@ -471,6 +462,200 @@ function renderQuickStats() {
     elements.quickSlowest.textContent = formatDurationSeconds(Math.max(...durations));
   }
   elements.quickSites.textContent = String(sites.size);
+}
+
+function drawBarChart(canvas, data, options = {}) {
+  const chart = setupCanvas(canvas);
+  if (!chart) {
+    return;
+  }
+  const { context, width, height } = chart;
+  const padding = { top: 8, right: 10, bottom: 28, left: 42 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = data.map((point) => point.value);
+  const maxValue = options.max || Math.max(...values, 1);
+  const tickCount = options.maxTicks || 4;
+
+  drawGrid(context, padding, width, height, maxValue, tickCount, options.formatYAxis);
+
+  if (!data.length) {
+    drawNoData(context, width, height);
+    return;
+  }
+
+  const gap = 12;
+  const barWidth = Math.max(12, Math.min(42, (plotWidth - gap * (data.length - 1)) / data.length));
+  const totalWidth = barWidth * data.length + gap * Math.max(0, data.length - 1);
+  const startX = padding.left + Math.max(0, (plotWidth - totalWidth) / 2);
+  data.forEach((point, index) => {
+    const x = startX + index * (barWidth + gap);
+    const barHeight = Math.max(4, (point.value / maxValue) * plotHeight);
+    const y = padding.top + plotHeight - barHeight;
+
+    roundedRect(context, x, y, barWidth, barHeight, 5, point.softColor || point.color);
+    context.strokeStyle = point.color;
+    context.lineWidth = 1.5;
+    context.stroke();
+
+    context.fillStyle = '#9099b5';
+    context.font = '10px "DM Mono", monospace';
+    context.textAlign = 'center';
+    context.fillText(point.label, x + barWidth / 2, height - 7);
+  });
+}
+
+function drawLineChart(canvas, data, options = {}) {
+  const chart = setupCanvas(canvas);
+  if (!chart) {
+    return;
+  }
+  const { context, width, height } = chart;
+  const padding = { top: 12, right: 12, bottom: 28, left: 42 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const values = data.map((point) => point.value);
+  const maxValue = options.max ?? Math.max(...values, 1);
+  const minValue = options.min ?? Math.min(0, ...values);
+  const range = Math.max(1, maxValue - minValue);
+
+  drawGrid(context, padding, width, height, maxValue, 4, options.formatYAxis, minValue);
+
+  if (!data.length) {
+    drawNoData(context, width, height);
+    return;
+  }
+
+  const points = data.map((point, index) => {
+    const x = padding.left + (data.length === 1 ? plotWidth / 2 : (plotWidth / (data.length - 1)) * index);
+    const y = padding.top + plotHeight - ((point.value - minValue) / range) * plotHeight;
+    return { ...point, x, y };
+  });
+
+  context.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) {
+      context.moveTo(point.x, point.y);
+    } else {
+      const previous = points[index - 1];
+      const controlX = (previous.x + point.x) / 2;
+      context.bezierCurveTo(controlX, previous.y, controlX, point.y, point.x, point.y);
+    }
+  });
+  context.lineTo(points.at(-1).x, padding.top + plotHeight);
+  context.lineTo(points[0].x, padding.top + plotHeight);
+  context.closePath();
+  context.fillStyle = options.fill || 'rgba(37, 99, 235, .10)';
+  context.fill();
+
+  context.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) {
+      context.moveTo(point.x, point.y);
+    } else {
+      const previous = points[index - 1];
+      const controlX = (previous.x + point.x) / 2;
+      context.bezierCurveTo(controlX, previous.y, controlX, point.y, point.x, point.y);
+    }
+  });
+  context.strokeStyle = options.color || '#2563eb';
+  context.lineWidth = 2.2;
+  context.stroke();
+
+  points.forEach((point) => {
+    context.beginPath();
+    context.arc(point.x, point.y, 3.4, 0, Math.PI * 2);
+    context.fillStyle = '#ffffff';
+    context.fill();
+    context.strokeStyle = options.color || '#2563eb';
+    context.lineWidth = 2;
+    context.stroke();
+
+    context.fillStyle = '#9099b5';
+    context.font = '10px "DM Mono", monospace';
+    context.textAlign = 'center';
+    context.fillText(point.label, point.x, height - 7);
+  });
+}
+
+function setupCanvas(canvas) {
+  if (!canvas) {
+    return null;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height));
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(width * scale);
+  canvas.height = Math.floor(height * scale);
+  const context = canvas.getContext('2d');
+  context.setTransform(scale, 0, 0, scale, 0, 0);
+  context.clearRect(0, 0, width, height);
+  return { context, width, height };
+}
+
+function drawGrid(context, padding, width, height, maxValue, tickCount, formatter = (value) => String(Math.round(value)), minValue = 0) {
+  const plotHeight = height - padding.top - padding.bottom;
+  const range = Math.max(1, maxValue - minValue);
+  context.strokeStyle = 'rgba(208, 213, 232, .68)';
+  context.fillStyle = '#9099b5';
+  context.lineWidth = 1;
+  context.font = '10px "DM Sans", sans-serif';
+  context.textAlign = 'right';
+
+  for (let index = 0; index <= tickCount; index += 1) {
+    const value = minValue + (range / tickCount) * index;
+    const y = padding.top + plotHeight - ((value - minValue) / range) * plotHeight;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+    context.fillText(formatter(value), padding.left - 8, y + 3);
+  }
+}
+
+function drawNoData(context, width, height) {
+  context.fillStyle = '#9099b5';
+  context.font = '12px "DM Sans", sans-serif';
+  context.textAlign = 'center';
+  context.fillText('No chart data', width / 2, height / 2);
+}
+
+function roundedRect(context, x, y, width, height, radius, fillStyle) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height);
+  context.lineTo(x, y + height);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+  context.fillStyle = fillStyle;
+  context.fill();
+}
+
+function colorForRun(run) {
+  const status = stateForRun(run);
+  if (status === 'failure') {
+    return '#dc2626';
+  }
+  if (status === 'running') {
+    return '#d97706';
+  }
+  return '#16a34a';
+}
+
+function softColorForRun(run) {
+  const status = stateForRun(run);
+  if (status === 'failure') {
+    return 'rgba(220, 38, 38, .14)';
+  }
+  if (status === 'running') {
+    return 'rgba(217, 119, 6, .14)';
+  }
+  return 'rgba(22, 163, 74, .14)';
 }
 
 function renderRunDetail(run) {
@@ -746,6 +931,10 @@ function formatDurationSeconds(seconds) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function formatDurationAxis(value) {
+  return value >= 60 ? `${Math.round(value / 60)}m` : `${Math.round(value)}s`;
+}
+
 function dayKey(value) {
   const date = new Date(value);
   return `${date.getMonth() + 1}/${date.getDate()}`;
@@ -789,6 +978,14 @@ function setBusy(isBusy) {
 function setStatusMessage(message) {
   elements.statusMessage.hidden = !message;
   elements.statusMessage.textContent = message;
+}
+
+function debounce(callback, delay) {
+  let timeoutId;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => callback(...args), delay);
+  };
 }
 
 function escapeHtml(value) {
