@@ -2,28 +2,57 @@ const state = {
   runs: [],
   filter: 'all',
   query: '',
+  page: 'dashboard',
 };
 
 const elements = {
   dashboardView: document.querySelector('#dashboardView'),
   detailView: document.querySelector('#detailView'),
-  runs: document.querySelector('#runs'),
+  recentRunsBody: document.querySelector('#recentRunsBody'),
+  allRunsBody: document.querySelector('#allRunsBody'),
+  statusMessage: document.querySelector('#statusMessage'),
+  pageTitle: document.querySelector('#pageTitle'),
+  pageSubtitle: document.querySelector('#pageSubtitle'),
   latestStatus: document.querySelector('#latestStatus'),
   latestMeta: document.querySelector('#latestMeta'),
   passRate: document.querySelector('#passRate'),
   passRateMeta: document.querySelector('#passRateMeta'),
-  latestCheck: document.querySelector('#latestCheck'),
-  latestPayment: document.querySelector('#latestPayment'),
+  failedCount: document.querySelector('#failedCount'),
+  failedMeta: document.querySelector('#failedMeta'),
   latestTotal: document.querySelector('#latestTotal'),
-  latestSite: document.querySelector('#latestSite'),
+  latestOrderMeta: document.querySelector('#latestOrderMeta'),
+  recentCount: document.querySelector('#recentCount'),
+  allCount: document.querySelector('#allCount'),
+  failedBadge: document.querySelector('#failedBadge'),
+  siteChipName: document.querySelector('#siteChipName'),
+  siteChipSub: document.querySelector('#siteChipSub'),
   refresh: document.querySelector('#refreshButton'),
-  search: document.querySelector('#searchInput'),
   actionsLink: document.querySelector('#actionsLink'),
   backButton: document.querySelector('#backButton'),
   detailStatus: document.querySelector('#detailStatus'),
   detailTitle: document.querySelector('#detailTitle'),
   detailSubtitle: document.querySelector('#detailSubtitle'),
-  template: document.querySelector('#runTemplate'),
+  resultBars: document.querySelector('#resultBars'),
+  durationTrend: document.querySelector('#durationTrend'),
+  weeklyPassRate: document.querySelector('#weeklyPassRate'),
+  statusDonut: document.querySelector('#statusDonut'),
+  donutValue: document.querySelector('#donutValue'),
+  donutLegend: document.querySelector('#donutLegend'),
+  averageDuration: document.querySelector('#averageDuration'),
+  paymentSplit: document.querySelector('#paymentSplit'),
+  timelineList: document.querySelector('#timelineList'),
+  quickTotal: document.querySelector('#quickTotal'),
+  quickAverage: document.querySelector('#quickAverage'),
+  quickFastest: document.querySelector('#quickFastest'),
+  quickSlowest: document.querySelector('#quickSlowest'),
+  quickSites: document.querySelector('#quickSites'),
+};
+
+const titles = {
+  dashboard: ['Dashboard', 'Latest resident-ordering workflow activity'],
+  runs: ['All Runs', 'Complete GitHub Actions history'],
+  analytics: ['Analytics', 'Trends across completed workflow runs'],
+  timeline: ['Timeline', 'Chronological run event log'],
 };
 
 const money = new Intl.NumberFormat('en-US', {
@@ -40,28 +69,36 @@ const dateTime = new Intl.DateTimeFormat(undefined, {
 
 elements.refresh.addEventListener('click', loadRuns);
 elements.backButton.addEventListener('click', () => {
-  window.location.hash = '';
+  window.location.hash = state.page === 'dashboard' ? '' : state.page;
 });
-elements.search.addEventListener('input', (event) => {
-  state.query = event.target.value.toLowerCase().trim();
-  renderRuns();
+
+document.querySelectorAll('.search-input').forEach((input) => {
+  input.addEventListener('input', (event) => {
+    state.query = event.target.value.toLowerCase().trim();
+    syncSearchInputs(event.target.value);
+    renderRunTables();
+  });
+});
+
+document.querySelectorAll('[data-filter-group]').forEach((group) => {
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-filter]');
+    if (!button) {
+      return;
+    }
+    state.filter = button.dataset.filter;
+    syncFilterTabs();
+    renderRunTables();
+  });
 });
 
 window.addEventListener('hashchange', renderRoute);
-
-document.querySelectorAll('.tab').forEach((button) => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('is-active'));
-    button.classList.add('is-active');
-    state.filter = button.dataset.filter;
-    renderRuns();
-  });
-});
 
 loadRuns();
 
 async function loadRuns() {
   setBusy(true);
+  setStatusMessage('');
   try {
     const response = await fetch('/.netlify/functions/github-runs', {
       headers: { accept: 'application/json' },
@@ -76,125 +113,364 @@ async function loadRuns() {
       elements.actionsLink.href = data.actionsUrl;
     }
     state.runs = data.runs || [];
-    renderSummary();
-    renderRuns();
-    renderRoute();
+    renderAll();
   } catch (error) {
     state.runs = sampleRuns();
-    renderSummary();
-    renderRuns(error instanceof Error ? error.message : 'Unable to load GitHub Actions data.');
-    renderRoute();
+    renderAll();
+    setStatusMessage(`${error instanceof Error ? error.message : 'Unable to load GitHub Actions data.'}. Showing sample layout data.`);
   } finally {
     setBusy(false);
   }
 }
 
-function renderRoute() {
-  const runId = currentRunId();
-  if (!runId) {
-    elements.dashboardView.hidden = false;
-    elements.detailView.hidden = true;
-    return;
-  }
-
-  const run = state.runs.find((candidate) => String(candidate.id || candidate.number) === runId);
-  if (!run) {
-    elements.dashboardView.hidden = false;
-    elements.detailView.hidden = true;
-    return;
-  }
-
-  elements.dashboardView.hidden = true;
-  elements.detailView.hidden = false;
-  renderRunDetail(run);
+function renderAll() {
+  renderSummary();
+  renderRunTables();
+  renderCharts();
+  renderTimeline();
+  renderRoute();
 }
 
-function currentRunId() {
-  const match = window.location.hash.match(/^#run-(.+)$/);
-  return match ? decodeURIComponent(match[1]) : '';
+function renderRoute() {
+  const hash = window.location.hash.replace(/^#/, '');
+  const runMatch = hash.match(/^run-(.+)$/);
+
+  if (runMatch) {
+    const runId = decodeURIComponent(runMatch[1]);
+    const run = state.runs.find((candidate) => String(candidate.id || candidate.number) === runId);
+    if (run) {
+      elements.dashboardView.hidden = true;
+      elements.detailView.hidden = false;
+      renderRunDetail(run);
+      return;
+    }
+  }
+
+  const nextPage = titles[hash] ? hash : 'dashboard';
+  state.page = nextPage;
+  elements.dashboardView.hidden = false;
+  elements.detailView.hidden = true;
+  document.querySelectorAll('[data-page]').forEach((page) => {
+    page.classList.toggle('is-active', page.dataset.page === nextPage);
+  });
+  document.querySelectorAll('[data-nav]').forEach((link) => {
+    link.classList.toggle('is-active', link.dataset.nav === nextPage);
+  });
+  elements.pageTitle.textContent = titles[nextPage][0];
+  elements.pageSubtitle.textContent = titles[nextPage][1];
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderSummary() {
   const latest = state.runs[0];
+  const completed = state.runs.filter((run) => run.status === 'completed');
+  const passed = completed.filter((run) => run.conclusion === 'success');
+  const failed = completed.filter((run) => run.conclusion === 'failure');
+  const passRate = completed.length ? Math.round((passed.length / completed.length) * 100) : 0;
+
+  elements.failedBadge.hidden = failed.length === 0;
+  elements.failedBadge.textContent = failed.length;
+  elements.failedCount.textContent = String(failed.length);
+  elements.failedMeta.textContent = failed.length ? `Latest failed run #${failed[0].number}` : 'No completed failures';
+  elements.passRate.textContent = completed.length ? `${passRate}%` : '--';
+  elements.passRateMeta.textContent = `${passed.length}/${completed.length} completed runs passed`;
+  elements.recentCount.textContent = `${state.runs.length} runs loaded`;
+  elements.allCount.textContent = `${state.runs.length} runs loaded`;
+  elements.quickTotal.textContent = String(state.runs.length);
+
   if (!latest) {
     elements.latestStatus.textContent = 'No runs';
     elements.latestMeta.textContent = 'No workflow data found';
-    elements.passRate.textContent = '--';
-    elements.latestCheck.textContent = '--';
-    elements.latestPayment.textContent = '--';
     elements.latestTotal.textContent = '--';
-    elements.latestSite.textContent = '--';
+    elements.latestOrderMeta.textContent = '--';
+    elements.siteChipName.textContent = 'GitHub Actions';
+    elements.siteChipSub.textContent = 'No data loaded';
     return;
   }
 
-  const completed = state.runs.filter((run) => run.status === 'completed');
-  const passed = completed.filter((run) => run.conclusion === 'success');
-  const passRate = completed.length ? Math.round((passed.length / completed.length) * 100) : 0;
   const summary = latest.summary || {};
-
   elements.latestStatus.textContent = labelForRun(latest);
   elements.latestMeta.textContent = `${formatDate(latest.createdAt)} - run #${latest.number}`;
-  elements.passRate.textContent = completed.length ? `${passRate}%` : '--';
-  elements.passRateMeta.textContent = `${passed.length}/${completed.length} completed runs passed`;
-  elements.latestCheck.textContent = summary.transactionCheckNumber || summary.orderId || '--';
-  elements.latestPayment.textContent = summary.paymentType || summary.checkoutPaymentType || '--';
   elements.latestTotal.textContent = formatMoney(summary.total);
-  elements.latestSite.textContent = summary.siteName || summary.siteSlug || '--';
+  elements.latestOrderMeta.textContent = [summary.itemName || firstItemName(summary), summary.paymentType || summary.checkoutPaymentType]
+    .filter(Boolean)
+    .join(' - ') || '--';
+  elements.siteChipName.textContent = summary.siteSlug || summary.siteName || 'GitHub Actions';
+  elements.siteChipSub.textContent = summary.baseUrl ? shortHost(summary.baseUrl) : 'Live workflow data';
 }
 
-function renderRuns(errorMessage) {
-  elements.runs.innerHTML = '';
-
-  if (errorMessage) {
-    const panel = document.createElement('div');
-    panel.className = 'error-panel';
-    panel.textContent = `${errorMessage}. Showing sample layout data.`;
-    elements.runs.append(panel);
-  }
-
+function renderRunTables() {
   const visibleRuns = state.runs.filter(matchesFilter).filter(matchesQuery);
-  if (!visibleRuns.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = 'No runs match the current view.';
-    elements.runs.append(empty);
+  renderTable(elements.recentRunsBody, visibleRuns.slice(0, 6));
+  renderTable(elements.allRunsBody, visibleRuns);
+}
+
+function renderTable(body, runs) {
+  body.innerHTML = '';
+
+  if (!runs.length) {
+    const row = document.createElement('tr');
+    row.className = 'empty-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 8;
+    cell.textContent = 'No runs match the current view.';
+    row.append(cell);
+    body.append(row);
     return;
   }
 
-  visibleRuns.forEach((run, index) => {
-    const node = elements.template.content.firstElementChild.cloneNode(true);
+  runs.forEach((run) => {
     const summary = run.summary || {};
     const status = stateForRun(run);
-    const runId = String(run.id || run.number);
+    const row = document.createElement('tr');
+    row.dataset.runId = String(run.id || run.number);
+    row.tabIndex = 0;
 
-    node.dataset.state = status;
-    node.style.animationDelay = `${Math.min(index * 28, 180)}ms`;
-    node.querySelector('.run-number').textContent = `#${run.number}`;
-    node.querySelector('.run-time').textContent = formatDate(run.createdAt);
-    node.querySelector('[data-field="site"]').textContent = summary.siteName || summary.siteSlug || summary.baseUrl || '--';
-    node.querySelector('[data-field="item"]').textContent = summary.itemName || firstItemName(summary) || '--';
-    node.querySelector('[data-field="total"]').textContent = formatMoney(summary.total);
-    node.querySelector('[data-field="check"]').textContent = summary.transactionCheckNumber || summary.orderId || '--';
-    node.querySelector('[data-field="payment"]').textContent = summary.paymentType || summary.checkoutPaymentType || '--';
-    node.querySelector('[data-field="duration"]').textContent = duration(run.createdAt, run.updatedAt);
-    node.querySelector('.badge').dataset.state = status;
-    node.querySelector('.badge').textContent = labelForRun(run);
+    row.append(
+      tableCell(runTitle(run)),
+      tableCell(summary.siteName || summary.siteSlug || summary.baseUrl || '--'),
+      tableCell(summary.itemName || firstItemName(summary) || '--'),
+      tableCell(formatMoney(summary.total), 'mono'),
+      tableCell(summary.transactionCheckNumber || summary.orderId || '--', 'mono'),
+      tableCell(summary.paymentType || summary.checkoutPaymentType || '--'),
+      tableCell(duration(run.createdAt, run.updatedAt), 'mono'),
+      tableCell(statusBadge(status, labelForRun(run))),
+    );
 
-    const summaryButton = node.querySelector('[data-action="open"]');
-    summaryButton.addEventListener('click', () => openRun(runId));
-    summaryButton.addEventListener('keydown', (event) => {
+    row.addEventListener('click', () => openRun(row.dataset.runId));
+    row.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        openRun(runId);
+        openRun(row.dataset.runId);
       }
     });
-
-    elements.runs.append(node);
+    body.append(row);
   });
+}
+
+function runTitle(run) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'run-title';
+
+  const number = document.createElement('strong');
+  number.textContent = `#${run.number}`;
+
+  const meta = document.createElement('span');
+  meta.className = 'run-meta';
+  meta.textContent = formatDate(run.createdAt);
+
+  wrapper.append(number, meta);
+  return wrapper;
+}
+
+function statusBadge(status, label) {
+  const badge = document.createElement('span');
+  badge.className = 'badge';
+  badge.dataset.state = status;
+  badge.textContent = label;
+  return badge;
+}
+
+function tableCell(content, className = '') {
+  const cell = document.createElement('td');
+  if (className) {
+    cell.className = className;
+  }
+  if (content instanceof Node) {
+    cell.append(content);
+  } else {
+    cell.textContent = content;
+  }
+  return cell;
 }
 
 function openRun(runId) {
   window.location.hash = `run-${encodeURIComponent(runId)}`;
+}
+
+function renderCharts() {
+  renderResultBars();
+  renderDurationBars();
+  renderWeeklyPassRate();
+  renderStatusDonut();
+  renderAverageDuration();
+  renderPaymentSplit();
+  renderQuickStats();
+}
+
+function renderResultBars() {
+  const runs = state.runs.slice(0, 16).reverse();
+  elements.resultBars.innerHTML = '';
+  runs.forEach((run) => {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.dataset.state = stateForRun(run);
+    bar.style.height = run.conclusion === 'failure' ? '72%' : stateForRun(run) === 'running' ? '58%' : '92%';
+    const label = document.createElement('span');
+    label.textContent = `#${run.number}`;
+    bar.title = `Run #${run.number}: ${labelForRun(run)}`;
+    bar.append(label);
+    elements.resultBars.append(bar);
+  });
+}
+
+function renderDurationBars() {
+  const runs = state.runs.slice(0, 16).reverse();
+  const values = runs.map((run) => durationSeconds(run)).filter((value) => value !== null);
+  const max = Math.max(...values, 60);
+  elements.durationTrend.innerHTML = '';
+  runs.forEach((run) => {
+    const seconds = durationSeconds(run) || 0;
+    const point = document.createElement('div');
+    point.className = 'spark-point';
+    point.style.height = `${Math.max(12, Math.round((seconds / max) * 100))}%`;
+    point.title = `Run #${run.number}: ${formatDurationSeconds(seconds)}`;
+    elements.durationTrend.append(point);
+  });
+}
+
+function renderWeeklyPassRate() {
+  const buckets = new Map();
+  state.runs.forEach((run) => {
+    if (run.status !== 'completed') {
+      return;
+    }
+    const key = weekKey(run.createdAt);
+    const bucket = buckets.get(key) || { total: 0, passed: 0 };
+    bucket.total += 1;
+    if (run.conclusion === 'success') {
+      bucket.passed += 1;
+    }
+    buckets.set(key, bucket);
+  });
+
+  const entries = Array.from(buckets.entries()).slice(-8);
+  elements.weeklyPassRate.innerHTML = '';
+  entries.forEach(([key, bucket]) => {
+    const rate = bucket.total ? Math.round((bucket.passed / bucket.total) * 100) : 0;
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = `${Math.max(8, rate)}%`;
+    bar.title = `${key}: ${rate}%`;
+    const label = document.createElement('span');
+    label.textContent = key;
+    bar.append(label);
+    elements.weeklyPassRate.append(bar);
+  });
+}
+
+function renderStatusDonut() {
+  const completed = state.runs.filter((run) => run.status === 'completed');
+  const passed = completed.filter((run) => run.conclusion === 'success').length;
+  const failed = completed.filter((run) => run.conclusion === 'failure').length;
+  const passRate = completed.length ? Math.round((passed / completed.length) * 100) : 0;
+  const angle = Math.round((passed / Math.max(completed.length, 1)) * 360);
+
+  elements.statusDonut.style.setProperty('--pass-angle', `${angle}deg`);
+  elements.donutValue.textContent = completed.length ? `${passRate}%` : '--';
+  elements.donutLegend.innerHTML = '';
+  elements.donutLegend.append(
+    legendItem('Passed', passed, 'legend-dot--pass'),
+    legendItem('Failed', failed, 'legend-dot--fail'),
+  );
+}
+
+function renderAverageDuration() {
+  const buckets = new Map();
+  state.runs.forEach((run) => {
+    const seconds = durationSeconds(run);
+    if (seconds === null) {
+      return;
+    }
+    const key = dayKey(run.createdAt);
+    const bucket = buckets.get(key) || { total: 0, count: 0 };
+    bucket.total += seconds;
+    bucket.count += 1;
+    buckets.set(key, bucket);
+  });
+
+  const entries = Array.from(buckets.entries()).slice(-7);
+  const averages = entries.map(([, bucket]) => bucket.total / bucket.count);
+  const max = Math.max(...averages, 60);
+  elements.averageDuration.innerHTML = '';
+  entries.forEach(([key, bucket]) => {
+    const average = Math.round(bucket.total / bucket.count);
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = `${Math.max(12, Math.round((average / max) * 100))}%`;
+    bar.title = `${key}: ${formatDurationSeconds(average)}`;
+    const label = document.createElement('span');
+    label.textContent = key;
+    bar.append(label);
+    elements.averageDuration.append(bar);
+  });
+}
+
+function renderPaymentSplit() {
+  const counts = new Map();
+  state.runs.forEach((run) => {
+    const summary = run.summary || {};
+    const payment = summary.paymentType || summary.checkoutPaymentType || 'Unknown';
+    counts.set(payment, (counts.get(payment) || 0) + 1);
+  });
+
+  const total = Math.max(state.runs.length, 1);
+  elements.paymentSplit.innerHTML = '';
+  Array.from(counts.entries()).forEach(([label, count]) => {
+    const row = document.createElement('div');
+    row.className = 'split-row';
+    row.innerHTML = `
+      <div class="split-row__top"><span>${escapeHtml(label)}</span><strong>${count}</strong></div>
+      <div class="split-track"><div class="split-fill" style="width:${Math.round((count / total) * 100)}%"></div></div>
+    `;
+    elements.paymentSplit.append(row);
+  });
+}
+
+function legendItem(label, count, dotClass) {
+  const item = document.createElement('span');
+  item.innerHTML = `<i class="legend-dot ${dotClass}"></i>${label} - ${count}`;
+  return item;
+}
+
+function renderTimeline() {
+  elements.timelineList.innerHTML = '';
+  state.runs.slice(0, 20).forEach((run) => {
+    const summary = run.summary || {};
+    const item = document.createElement('li');
+    item.className = 'timeline-item';
+    const status = stateForRun(run);
+    item.innerHTML = `
+      <span class="timeline-dot" data-state="${status}"></span>
+      <span class="timeline-body">
+        <strong>Run #${run.number} - ${escapeHtml(summary.itemName || firstItemName(summary) || run.name || 'Resident Ordering Tests')}</strong>
+        <span>${formatDate(run.createdAt)} - ${duration(run.createdAt, run.updatedAt)} - ${escapeHtml(labelForRun(run))}</span>
+      </span>
+      <span class="badge" data-state="${status}">${escapeHtml(labelForRun(run))}</span>
+    `;
+    item.addEventListener('click', () => openRun(String(run.id || run.number)));
+    elements.timelineList.append(item);
+  });
+}
+
+function renderQuickStats() {
+  const durations = state.runs.map(durationSeconds).filter((value) => value !== null);
+  const sites = new Set(state.runs.map((run) => {
+    const summary = run.summary || {};
+    return summary.siteSlug || summary.siteName || summary.baseUrl;
+  }).filter(Boolean));
+
+  if (!durations.length) {
+    elements.quickAverage.textContent = '--';
+    elements.quickFastest.textContent = '--';
+    elements.quickSlowest.textContent = '--';
+  } else {
+    const average = Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length);
+    elements.quickAverage.textContent = formatDurationSeconds(average);
+    elements.quickFastest.textContent = formatDurationSeconds(Math.min(...durations));
+    elements.quickSlowest.textContent = formatDurationSeconds(Math.max(...durations));
+  }
+  elements.quickSites.textContent = String(sites.size);
 }
 
 function renderRunDetail(run) {
@@ -452,39 +728,99 @@ function formatDate(value) {
 }
 
 function duration(start, end) {
-  if (!start || !end) {
-    return '--';
+  const seconds = start && end ? Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000)) : null;
+  return seconds === null ? '--' : formatDurationSeconds(seconds);
+}
+
+function durationSeconds(run) {
+  if (!run.createdAt || !run.updatedAt) {
+    return null;
   }
-  const seconds = Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
+  return Math.max(0, Math.round((new Date(run.updatedAt) - new Date(run.createdAt)) / 1000));
+}
+
+function formatDurationSeconds(seconds) {
   if (seconds < 60) {
     return `${seconds}s`;
   }
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function dayKey(value) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function weekKey(value) {
+  const date = new Date(value);
+  const start = new Date(date.getFullYear(), 0, 1);
+  const week = Math.ceil((((date - start) / 86400000) + start.getDay() + 1) / 7);
+  return `W${week}`;
+}
+
+function shortHost(value) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return value;
+  }
+}
+
+function syncSearchInputs(value) {
+  document.querySelectorAll('.search-input').forEach((input) => {
+    if (input.value !== value) {
+      input.value = value;
+    }
+  });
+}
+
+function syncFilterTabs() {
+  document.querySelectorAll('[data-filter]').forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.filter === state.filter);
+  });
+}
+
 function setBusy(isBusy) {
-  elements.runs.setAttribute('aria-busy', String(isBusy));
+  elements.recentRunsBody.setAttribute('aria-busy', String(isBusy));
   elements.refresh.disabled = isBusy;
+  elements.refresh.textContent = isBusy ? 'Refreshing' : 'Refresh';
+}
+
+function setStatusMessage(message) {
+  elements.statusMessage.hidden = !message;
+  elements.statusMessage.textContent = message;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
 }
 
 function sampleRuns() {
+  const now = Date.now();
   return [
     {
       id: 1,
-      number: 14,
+      number: 16,
       name: 'Resident Ordering Tests',
       status: 'completed',
       conclusion: 'success',
       branch: 'main',
       event: 'schedule',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now + 91000).toISOString(),
       htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',
       artifactsUrl: 'https://github.com/almel00/playwright-ecomm/actions',
       artifactName: 'resident-ordering-sample',
       summary: {
         siteName: 'ABC Senior Living',
         siteSlug: 'abc-senior-living',
+        baseUrl: 'https://abcseniorliving.servingintel.app',
         revenueCenterName: 'Las Olivas',
         menuName: 'Lunch',
         itemName: 'Salmon Havarti',
@@ -503,17 +839,42 @@ function sampleRuns() {
     },
     {
       id: 2,
-      number: 13,
+      number: 15,
+      name: 'Resident Ordering Tests',
+      status: 'completed',
+      conclusion: 'success',
+      branch: 'main',
+      event: 'workflow_dispatch',
+      createdAt: new Date(now - 86400000).toISOString(),
+      updatedAt: new Date(now - 86400000 + 106000).toISOString(),
+      htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',
+      artifactsUrl: 'https://github.com/almel00/playwright-ecomm/actions',
+      summary: {
+        siteName: 'ABC Senior Living',
+        itemName: 'Anniversary Package',
+        itemPrice: 43.13,
+        subtotal: 43.13,
+        tax: 0,
+        discount: 0,
+        total: 43.13,
+        transactionCheckNumber: '99571790',
+        paymentType: 'Direct Billing',
+        checkoutTotalMatchesTransaction: true,
+      },
+    },
+    {
+      id: 3,
+      number: 14,
       name: 'Resident Ordering Tests',
       status: 'completed',
       conclusion: 'failure',
       branch: 'main',
-      event: 'schedule',
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
-      updatedAt: new Date(Date.now() - 86220000).toISOString(),
+      event: 'workflow_dispatch',
+      createdAt: new Date(now - 172800000).toISOString(),
+      updatedAt: new Date(now - 172800000 + 194000).toISOString(),
       htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',
       artifactsUrl: 'https://github.com/almel00/playwright-ecomm/actions',
-      summaryError: 'No resident ordering artifact found for this run.',
+      summaryError: 'Could not find a transaction matching checkout total and item details.',
       summary: {
         siteName: 'ABC Senior Living',
         itemName: 'Cake',
@@ -522,6 +883,7 @@ function sampleRuns() {
         discount: 0,
         total: 14.38,
         paymentType: 'Direct Billing',
+        checkoutTotalMatchesTransaction: false,
       },
     },
   ];
