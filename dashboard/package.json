@@ -1,0 +1,10 @@
+{
+  "name": "resident-ordering-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Netlify dashboard for resident ordering GitHub Actions results.",
+  "scripts": {
+    "dev": "netlify dev",
+    "check": "node --check netlify/functions/github-runs.js"
+  }
+}

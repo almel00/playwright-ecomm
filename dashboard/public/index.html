@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Resident Ordering Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#runs">Skip to runs</a>
+    <main class="shell">
+      <header class="topbar" aria-label="Dashboard header">
+        <div>
+          <p class="eyebrow">Resident ordering</p>
+          <h1>Daily automation dashboard</h1>
+        </div>
+        <div class="topbar__actions">
+          <a class="icon-button" id="actionsLink" href="https://github.com/almel00/playwright-ecomm/actions" target="_blank" rel="noreferrer" aria-label="Open GitHub Actions">
+            GitHub
+          </a>
+          <button class="primary-button" id="refreshButton" type="button">
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <section class="status-strip" aria-label="Latest run summary">
+        <article class="signal signal--wide">
+          <span class="signal__label">Latest run</span>
+          <strong id="latestStatus">Loading</strong>
+          <span id="latestMeta">Connecting to GitHub Actions</span>
+        </article>
+        <article class="signal">
+          <span class="signal__label">Pass rate</span>
+          <strong id="passRate">--</strong>
+          <span id="passRateMeta">Last 10 runs</span>
+        </article>
+        <article class="signal">
+          <span class="signal__label">Latest check</span>
+          <strong id="latestCheck">--</strong>
+          <span id="latestPayment">--</span>
+        </article>
+        <article class="signal">
+          <span class="signal__label">Order total</span>
+          <strong id="latestTotal">--</strong>
+          <span id="latestSite">--</span>
+        </article>
+      </section>
+
+      <section class="control-row" aria-label="Run filters">
+        <div class="tabs" role="tablist" aria-label="Status filter">
+          <button class="tab is-active" type="button" data-filter="all">All</button>
+          <button class="tab" type="button" data-filter="success">Passed</button>
+          <button class="tab" type="button" data-filter="failure">Failed</button>
+          <button class="tab" type="button" data-filter="running">Running</button>
+        </div>
+        <label class="search">
+          <span class="sr-only">Search runs</span>
+          <input id="searchInput" type="search" placeholder="Search site, item, check number">
+        </label>
+      </section>
+
+      <section id="runs" class="runs" aria-live="polite" aria-busy="true"></section>
+    </main>
+
+    <template id="runTemplate">
+      <article class="run-card">
+        <div class="run-card__rail" aria-hidden="true"></div>
+        <div class="run-card__main">
+          <div class="run-card__header">
+            <div>
+              <p class="run-card__kicker"></p>
+              <h2></h2>
+            </div>
+            <span class="badge"></span>
+          </div>
+          <dl class="run-grid">
+            <div>
+              <dt>Site</dt>
+              <dd data-field="site"></dd>
+            </div>
+            <div>
+              <dt>Item</dt>
+              <dd data-field="item"></dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd data-field="total"></dd>
+            </div>
+            <div>
+              <dt>Check</dt>
+              <dd data-field="check"></dd>
+            </div>
+            <div>
+              <dt>Payment</dt>
+              <dd data-field="payment"></dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd data-field="duration"></dd>
+            </div>
+          </dl>
+          <p class="run-card__note"></p>
+        </div>
+        <div class="run-card__actions">
+          <a class="text-link" data-link="run" target="_blank" rel="noreferrer">Run</a>
+          <a class="text-link" data-link="artifacts" target="_blank" rel="noreferrer">Artifacts</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
