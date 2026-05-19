@@ -2,6 +2,7 @@ const state = {
   runs: [],
   filter: 'all',
   query: '',
+  expanded: new Set(),
 };
 
 const elements = {
@@ -95,12 +96,12 @@ function renderSummary() {
   const summary = latest.summary || {};
 
   elements.latestStatus.textContent = labelForRun(latest);
-  elements.latestMeta.textContent = `${formatDate(latest.createdAt)} · run #${latest.number}`;
+  elements.latestMeta.textContent = `${formatDate(latest.createdAt)} - run #${latest.number}`;
   elements.passRate.textContent = completed.length ? `${passRate}%` : '--';
   elements.passRateMeta.textContent = `${passed.length}/${completed.length} completed runs passed`;
   elements.latestCheck.textContent = summary.transactionCheckNumber || summary.orderId || '--';
   elements.latestPayment.textContent = summary.paymentType || summary.checkoutPaymentType || '--';
-  elements.latestTotal.textContent = typeof summary.total === 'number' ? money.format(summary.total) : '--';
+  elements.latestTotal.textContent = formatMoney(summary.total);
   elements.latestSite.textContent = summary.siteName || summary.siteSlug || '--';
 }
 
@@ -110,7 +111,7 @@ function renderRuns(errorMessage) {
   if (errorMessage) {
     const panel = document.createElement('div');
     panel.className = 'error-panel';
-    panel.textContent = `${errorMessage} Showing sample layout data.`;
+    panel.textContent = `${errorMessage}. Showing sample layout data.`;
     elements.runs.append(panel);
   }
 
@@ -127,25 +128,69 @@ function renderRuns(errorMessage) {
     const node = elements.template.content.firstElementChild.cloneNode(true);
     const summary = run.summary || {};
     const status = stateForRun(run);
+    const runId = String(run.id || run.number);
+    const isExpanded = state.expanded.has(runId);
 
     node.dataset.state = status;
-    node.style.animationDelay = `${Math.min(index * 35, 240)}ms`;
-    node.querySelector('.run-card__kicker').textContent = `${formatDate(run.createdAt)} · #${run.number}`;
-    node.querySelector('h2').textContent = summary.siteName || run.name || 'Resident Ordering Tests';
-    node.querySelector('.badge').dataset.state = status;
-    node.querySelector('.badge').textContent = labelForRun(run);
-    node.querySelector('[data-field="site"]').textContent = summary.siteSlug || summary.baseUrl || '--';
+    node.dataset.expanded = String(isExpanded);
+    node.style.animationDelay = `${Math.min(index * 28, 180)}ms`;
+    node.querySelector('.run-card__summary').setAttribute('aria-expanded', String(isExpanded));
+    node.querySelector('.run-details').hidden = !isExpanded;
+    node.querySelector('.run-number').textContent = `#${run.number}`;
+    node.querySelector('.run-time').textContent = formatDate(run.createdAt);
+    node.querySelector('[data-field="site"]').textContent = summary.siteName || summary.siteSlug || summary.baseUrl || '--';
     node.querySelector('[data-field="item"]').textContent = summary.itemName || firstItemName(summary) || '--';
-    node.querySelector('[data-field="total"]').textContent = typeof summary.total === 'number' ? money.format(summary.total) : '--';
+    node.querySelector('[data-field="total"]').textContent = formatMoney(summary.total);
     node.querySelector('[data-field="check"]').textContent = summary.transactionCheckNumber || summary.orderId || '--';
     node.querySelector('[data-field="payment"]').textContent = summary.paymentType || summary.checkoutPaymentType || '--';
     node.querySelector('[data-field="duration"]').textContent = duration(run.createdAt, run.updatedAt);
-    node.querySelector('.run-card__note').textContent = noteForRun(run);
+    node.querySelector('.badge').dataset.state = status;
+    node.querySelector('.badge').textContent = labelForRun(run);
+
+    setDetail(node, 'revenueCenter', summary.revenueCenterName);
+    setDetail(node, 'menu', summary.menuName);
+    setDetail(node, 'itemPrice', formatMoney(summary.itemPrice));
+    setDetail(node, 'subtotal', formatMoney(summary.subtotal));
+    setDetail(node, 'tax', formatMoney(summary.tax));
+    setDetail(node, 'discount', formatMoney(summary.discount));
+    setDetail(node, 'detailTotal', formatMoney(summary.total));
+    setDetail(node, 'checkoutPayment', summary.checkoutPaymentType);
+    setDetail(node, 'transactionCheck', summary.transactionCheckNumber);
+    setDetail(node, 'orderId', summary.orderId);
+    setDetail(node, 'transactionDate', summary.transactionDate);
+    setDetail(node, 'transactionPayment', summary.paymentType);
+    setDetail(node, 'totalMatched', yesNo(summary.checkoutTotalMatchesTransaction));
+    setDetail(node, 'kitchenMessage', kitchenMessageStatus(summary));
+    setDetail(node, 'payloadMatched', yesNo(summary.submissionPayloadMatched));
+    setDetail(node, 'artifactName', run.artifactName);
+    setDetail(node, 'note', resultNote(run));
     node.querySelector('[data-link="run"]').href = run.htmlUrl;
     node.querySelector('[data-link="artifacts"]').href = run.artifactsUrl || run.htmlUrl;
 
+    const summaryButton = node.querySelector('[data-action="toggle"]');
+    summaryButton.addEventListener('click', () => toggleRun(runId));
+    summaryButton.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleRun(runId);
+      }
+    });
+
     elements.runs.append(node);
   });
+}
+
+function toggleRun(runId) {
+  if (state.expanded.has(runId)) {
+    state.expanded.delete(runId);
+  } else {
+    state.expanded.add(runId);
+  }
+  renderRuns();
+}
+
+function setDetail(node, name, value) {
+  node.querySelector(`[data-detail="${name}"]`).textContent = value || '--';
 }
 
 function matchesFilter(run) {
@@ -198,21 +243,54 @@ function labelForRun(run) {
   return run.conclusion || 'Done';
 }
 
-function noteForRun(run) {
+function resultNote(run) {
   const summary = run.summary || {};
   if (run.summaryError) {
     return run.summaryError;
+  }
+  if (run.conclusion === 'failure') {
+    return 'The workflow failed. Open the run or artifacts to inspect the Playwright report, screenshots, video, and trace.';
   }
   if (summary.checkoutTotalMatchesTransaction === false) {
     return 'Checkout total did not match the transaction total.';
   }
   if (summary.transactionKitchenMessageVisible === false) {
-    return 'Transaction matched; kitchen message was not rendered in transaction detail.';
+    return 'Transaction matched. The kitchen message was not visible in the transaction detail.';
   }
   if (run.conclusion === 'success') {
     return 'Checkout and transaction validation completed.';
   }
-  return 'Open the run for failure details, screenshots, video, and trace artifacts.';
+  return 'Run is still in progress or has not produced a summary yet.';
+}
+
+function kitchenMessageStatus(summary) {
+  if (summary.transactionKitchenMessageVisible === true) {
+    return 'Visible in transaction';
+  }
+  if (summary.transactionKitchenMessageVisible === false) {
+    return 'Not shown in transaction';
+  }
+  if (summary.kitchenMessageSubmitted === true) {
+    return 'Submitted';
+  }
+  if (summary.kitchenMessageSubmitted === false) {
+    return 'Not confirmed';
+  }
+  return '--';
+}
+
+function yesNo(value) {
+  if (value === true) {
+    return 'Yes';
+  }
+  if (value === false) {
+    return 'No';
+  }
+  return '--';
+}
+
+function formatMoney(value) {
+  return typeof value === 'number' ? money.format(value) : '--';
 }
 
 function firstItemName(summary) {
@@ -251,14 +329,24 @@ function sampleRuns() {
       updatedAt: new Date().toISOString(),
       htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',
       artifactsUrl: 'https://github.com/almel00/playwright-ecomm/actions',
+      artifactName: 'resident-ordering-sample',
       summary: {
         siteName: 'ABC Senior Living',
         siteSlug: 'abc-senior-living',
+        revenueCenterName: 'Las Olivas',
+        menuName: 'Lunch',
         itemName: 'Salmon Havarti',
+        itemPrice: 12,
+        subtotal: 12,
+        tax: 0,
+        discount: 0,
         total: 12,
         transactionCheckNumber: '99571794',
         paymentType: 'Direct Billing',
+        checkoutPaymentType: 'Meal Credit',
         checkoutTotalMatchesTransaction: true,
+        transactionKitchenMessageVisible: false,
+        submissionPayloadMatched: false,
       },
     },
     {
@@ -275,6 +363,9 @@ function sampleRuns() {
       summary: {
         siteName: 'ABC Senior Living',
         itemName: 'Cake',
+        subtotal: 12.5,
+        tax: 1.88,
+        discount: 0,
         total: 14.38,
         paymentType: 'Direct Billing',
       },
