@@ -2,10 +2,11 @@ const state = {
   runs: [],
   filter: 'all',
   query: '',
-  expanded: new Set(),
 };
 
 const elements = {
+  dashboardView: document.querySelector('#dashboardView'),
+  detailView: document.querySelector('#detailView'),
   runs: document.querySelector('#runs'),
   latestStatus: document.querySelector('#latestStatus'),
   latestMeta: document.querySelector('#latestMeta'),
@@ -18,6 +19,10 @@ const elements = {
   refresh: document.querySelector('#refreshButton'),
   search: document.querySelector('#searchInput'),
   actionsLink: document.querySelector('#actionsLink'),
+  backButton: document.querySelector('#backButton'),
+  detailStatus: document.querySelector('#detailStatus'),
+  detailTitle: document.querySelector('#detailTitle'),
+  detailSubtitle: document.querySelector('#detailSubtitle'),
   template: document.querySelector('#runTemplate'),
 };
 
@@ -34,10 +39,15 @@ const dateTime = new Intl.DateTimeFormat(undefined, {
 });
 
 elements.refresh.addEventListener('click', loadRuns);
+elements.backButton.addEventListener('click', () => {
+  window.location.hash = '';
+});
 elements.search.addEventListener('input', (event) => {
   state.query = event.target.value.toLowerCase().trim();
   renderRuns();
 });
+
+window.addEventListener('hashchange', renderRoute);
 
 document.querySelectorAll('.tab').forEach((button) => {
   button.addEventListener('click', () => {
@@ -68,13 +78,40 @@ async function loadRuns() {
     state.runs = data.runs || [];
     renderSummary();
     renderRuns();
+    renderRoute();
   } catch (error) {
     state.runs = sampleRuns();
     renderSummary();
     renderRuns(error instanceof Error ? error.message : 'Unable to load GitHub Actions data.');
+    renderRoute();
   } finally {
     setBusy(false);
   }
+}
+
+function renderRoute() {
+  const runId = currentRunId();
+  if (!runId) {
+    elements.dashboardView.hidden = false;
+    elements.detailView.hidden = true;
+    return;
+  }
+
+  const run = state.runs.find((candidate) => String(candidate.id || candidate.number) === runId);
+  if (!run) {
+    elements.dashboardView.hidden = false;
+    elements.detailView.hidden = true;
+    return;
+  }
+
+  elements.dashboardView.hidden = true;
+  elements.detailView.hidden = false;
+  renderRunDetail(run);
+}
+
+function currentRunId() {
+  const match = window.location.hash.match(/^#run-(.+)$/);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 function renderSummary() {
@@ -129,13 +166,9 @@ function renderRuns(errorMessage) {
     const summary = run.summary || {};
     const status = stateForRun(run);
     const runId = String(run.id || run.number);
-    const isExpanded = state.expanded.has(runId);
 
     node.dataset.state = status;
-    node.dataset.expanded = String(isExpanded);
     node.style.animationDelay = `${Math.min(index * 28, 180)}ms`;
-    node.querySelector('.run-card__summary').setAttribute('aria-expanded', String(isExpanded));
-    node.querySelector('.run-details').hidden = !isExpanded;
     node.querySelector('.run-number').textContent = `#${run.number}`;
     node.querySelector('.run-time').textContent = formatDate(run.createdAt);
     node.querySelector('[data-field="site"]').textContent = summary.siteName || summary.siteSlug || summary.baseUrl || '--';
@@ -147,33 +180,12 @@ function renderRuns(errorMessage) {
     node.querySelector('.badge').dataset.state = status;
     node.querySelector('.badge').textContent = labelForRun(run);
 
-    setDetail(node, 'revenueCenter', summary.revenueCenterName);
-    setDetail(node, 'menu', summary.menuName);
-    setDetail(node, 'itemPrice', formatMoney(summary.itemPrice));
-    setDetail(node, 'subtotal', formatMoney(summary.subtotal));
-    setDetail(node, 'tax', formatMoney(summary.tax));
-    setDetail(node, 'discount', formatMoney(summary.discount));
-    setDetail(node, 'detailTotal', formatMoney(summary.total));
-    setDetail(node, 'checkoutPayment', summary.checkoutPaymentType);
-    setDetail(node, 'transactionCheck', summary.transactionCheckNumber);
-    setDetail(node, 'orderId', summary.orderId);
-    setDetail(node, 'transactionDate', summary.transactionDate);
-    setDetail(node, 'transactionPayment', summary.paymentType);
-    setDetail(node, 'totalMatched', yesNo(summary.checkoutTotalMatchesTransaction));
-    setDetail(node, 'kitchenMessage', kitchenMessageStatus(summary));
-    setDetail(node, 'payloadMatched', yesNo(summary.submissionPayloadMatched));
-    setDetail(node, 'artifactName', run.artifactName);
-    setDetail(node, 'note', resultNote(run));
-    renderFlowChecks(node, buildFlowChecks(run));
-    node.querySelector('[data-link="run"]').href = run.htmlUrl;
-    node.querySelector('[data-link="artifacts"]').href = run.artifactsUrl || run.htmlUrl;
-
-    const summaryButton = node.querySelector('[data-action="toggle"]');
-    summaryButton.addEventListener('click', () => toggleRun(runId));
+    const summaryButton = node.querySelector('[data-action="open"]');
+    summaryButton.addEventListener('click', () => openRun(runId));
     summaryButton.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        toggleRun(runId);
+        openRun(runId);
       }
     });
 
@@ -181,21 +193,54 @@ function renderRuns(errorMessage) {
   });
 }
 
-function toggleRun(runId) {
-  if (state.expanded.has(runId)) {
-    state.expanded.delete(runId);
-  } else {
-    state.expanded.add(runId);
-  }
-  renderRuns();
+function openRun(runId) {
+  window.location.hash = `run-${encodeURIComponent(runId)}`;
 }
 
-function setDetail(node, name, value) {
-  node.querySelector(`[data-detail="${name}"]`).textContent = value || '--';
+function renderRunDetail(run) {
+  const summary = run.summary || {};
+  const status = stateForRun(run);
+
+  elements.detailStatus.dataset.state = status;
+  elements.detailStatus.textContent = labelForRun(run);
+  elements.detailTitle.textContent = `${summary.siteName || run.name || 'Resident Ordering Tests'} - #${run.number}`;
+  elements.detailSubtitle.textContent = `${formatDate(run.createdAt)} - ${run.branch || 'main'} - ${run.event || 'workflow'}`;
+
+  setDetail('heroTotal', formatMoney(summary.total));
+  setDetail('heroCheck', summary.transactionCheckNumber || summary.orderId);
+  setDetail('heroPayment', summary.paymentType || summary.checkoutPaymentType);
+  setDetail('heroDuration', duration(run.createdAt, run.updatedAt));
+  setDetail('revenueCenter', summary.revenueCenterName);
+  setDetail('menu', summary.menuName);
+  setDetail('detailItem', summary.itemName || firstItemName(summary));
+  setDetail('itemPrice', formatMoney(summary.itemPrice));
+  setDetail('subtotal', formatMoney(summary.subtotal));
+  setDetail('tax', formatMoney(summary.tax));
+  setDetail('discount', formatMoney(summary.discount));
+  setDetail('detailTotal', formatMoney(summary.total));
+  setDetail('checkoutPayment', summary.checkoutPaymentType);
+  setDetail('transactionCheck', summary.transactionCheckNumber);
+  setDetail('orderId', summary.orderId);
+  setDetail('transactionDate', summary.transactionDate);
+  setDetail('transactionPayment', summary.paymentType);
+  setDetail('totalMatched', yesNo(summary.checkoutTotalMatchesTransaction));
+  setDetail('kitchenMessage', kitchenMessageStatus(summary));
+  setDetail('payloadMatched', yesNo(summary.submissionPayloadMatched));
+  setDetail('artifactName', run.artifactName);
+  setDetail('note', resultNote(run));
+  renderFlowChecks(buildFlowChecks(run));
+
+  elements.detailView.querySelector('[data-link="run"]').href = run.htmlUrl;
+  elements.detailView.querySelector('[data-link="artifacts"]').href = run.artifactsUrl || run.htmlUrl;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function renderFlowChecks(node, checks) {
-  const list = node.querySelector('[data-detail="flowChecks"]');
+function setDetail(name, value) {
+  elements.detailView.querySelector(`[data-detail="${name}"]`).textContent = value || '--';
+}
+
+function renderFlowChecks(checks) {
+  const list = elements.detailView.querySelector('[data-detail="flowChecks"]');
   list.innerHTML = '';
 
   checks.forEach((check) => {
@@ -430,6 +475,8 @@ function sampleRuns() {
       name: 'Resident Ordering Tests',
       status: 'completed',
       conclusion: 'success',
+      branch: 'main',
+      event: 'schedule',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',
@@ -460,6 +507,8 @@ function sampleRuns() {
       name: 'Resident Ordering Tests',
       status: 'completed',
       conclusion: 'failure',
+      branch: 'main',
+      event: 'schedule',
       createdAt: new Date(Date.now() - 86400000).toISOString(),
       updatedAt: new Date(Date.now() - 86220000).toISOString(),
       htmlUrl: 'https://github.com/almel00/playwright-ecomm/actions',

@@ -25,60 +25,128 @@
         </div>
       </header>
 
-      <section class="summary-grid" aria-label="Latest run summary">
-        <article class="metric metric--primary">
-          <span class="metric__label">Latest run</span>
-          <strong id="latestStatus">Loading</strong>
-          <span id="latestMeta">Connecting to GitHub Actions</span>
-        </article>
-        <article class="metric">
-          <span class="metric__label">Pass rate</span>
-          <strong id="passRate">--</strong>
-          <span id="passRateMeta">Last 10 runs</span>
-        </article>
-        <article class="metric">
-          <span class="metric__label">Latest check</span>
-          <strong id="latestCheck">--</strong>
-          <span id="latestPayment">--</span>
-        </article>
-        <article class="metric">
-          <span class="metric__label">Order total</span>
-          <strong id="latestTotal">--</strong>
-          <span id="latestSite">--</span>
-        </article>
+      <section id="dashboardView">
+        <section class="summary-grid" aria-label="Latest run summary">
+          <article class="metric metric--primary">
+            <span class="metric__label">Latest run</span>
+            <strong id="latestStatus">Loading</strong>
+            <span id="latestMeta">Connecting to GitHub Actions</span>
+          </article>
+          <article class="metric">
+            <span class="metric__label">Pass rate</span>
+            <strong id="passRate">--</strong>
+            <span id="passRateMeta">Last 10 runs</span>
+          </article>
+          <article class="metric">
+            <span class="metric__label">Latest check</span>
+            <strong id="latestCheck">--</strong>
+            <span id="latestPayment">--</span>
+          </article>
+          <article class="metric">
+            <span class="metric__label">Order total</span>
+            <strong id="latestTotal">--</strong>
+            <span id="latestSite">--</span>
+          </article>
+        </section>
+
+        <section class="toolbar" aria-label="Run filters">
+          <div class="tabs" role="tablist" aria-label="Status filter">
+            <button class="tab is-active" type="button" data-filter="all">All</button>
+            <button class="tab" type="button" data-filter="success">Passed</button>
+            <button class="tab" type="button" data-filter="failure">Failed</button>
+            <button class="tab" type="button" data-filter="running">Running</button>
+          </div>
+          <label class="search">
+            <span class="sr-only">Search runs</span>
+            <input id="searchInput" type="search" placeholder="Search site, item, check">
+          </label>
+        </section>
+
+        <section class="runs-panel" aria-label="Workflow runs">
+          <div class="runs-head" aria-hidden="true">
+            <span>Run</span>
+            <span>Site</span>
+            <span>Item</span>
+            <span>Total</span>
+            <span>Check</span>
+            <span>Payment</span>
+            <span>Duration</span>
+            <span>Status</span>
+          </div>
+          <div id="runs" class="runs" aria-live="polite" aria-busy="true"></div>
+        </section>
       </section>
 
-      <section class="toolbar" aria-label="Run filters">
-        <div class="tabs" role="tablist" aria-label="Status filter">
-          <button class="tab is-active" type="button" data-filter="all">All</button>
-          <button class="tab" type="button" data-filter="success">Passed</button>
-          <button class="tab" type="button" data-filter="failure">Failed</button>
-          <button class="tab" type="button" data-filter="running">Running</button>
+      <section id="detailView" class="detail-page" hidden>
+        <div class="detail-page__top">
+          <button class="button button--secondary" id="backButton" type="button">Back to runs</button>
+          <span class="badge" id="detailStatus"></span>
         </div>
-        <label class="search">
-          <span class="sr-only">Search runs</span>
-          <input id="searchInput" type="search" placeholder="Search site, item, check">
-        </label>
-      </section>
 
-      <section class="runs-panel" aria-label="Workflow runs">
-        <div class="runs-head" aria-hidden="true">
-          <span>Run</span>
-          <span>Site</span>
-          <span>Item</span>
-          <span>Total</span>
-          <span>Check</span>
-          <span>Payment</span>
-          <span>Duration</span>
-          <span>Status</span>
+        <section class="detail-hero" aria-label="Run detail summary">
+          <div>
+            <p class="eyebrow">Run details</p>
+            <h2 id="detailTitle">Run</h2>
+            <p id="detailSubtitle"></p>
+          </div>
+          <dl class="detail-hero__stats">
+            <div><dt>Total</dt><dd data-detail="heroTotal"></dd></div>
+            <div><dt>Check</dt><dd data-detail="heroCheck"></dd></div>
+            <div><dt>Payment</dt><dd data-detail="heroPayment"></dd></div>
+            <div><dt>Duration</dt><dd data-detail="heroDuration"></dd></div>
+          </dl>
+        </section>
+
+        <section class="detail-block detail-block--wide">
+          <h2>Flow checks</h2>
+          <ol class="flow-list" data-detail="flowChecks"></ol>
+        </section>
+
+        <div class="detail-columns">
+          <section class="detail-block">
+            <h2>Checkout</h2>
+            <dl class="detail-grid">
+              <div><dt>Revenue center</dt><dd data-detail="revenueCenter"></dd></div>
+              <div><dt>Menu</dt><dd data-detail="menu"></dd></div>
+              <div><dt>Item</dt><dd data-detail="detailItem"></dd></div>
+              <div><dt>Item price</dt><dd data-detail="itemPrice"></dd></div>
+              <div><dt>Subtotal</dt><dd data-detail="subtotal"></dd></div>
+              <div><dt>Tax</dt><dd data-detail="tax"></dd></div>
+              <div><dt>Discount</dt><dd data-detail="discount"></dd></div>
+              <div><dt>Total</dt><dd data-detail="detailTotal"></dd></div>
+              <div><dt>Payment selected</dt><dd data-detail="checkoutPayment"></dd></div>
+            </dl>
+          </section>
+
+          <section class="detail-block">
+            <h2>Transaction</h2>
+            <dl class="detail-grid">
+              <div><dt>Check number</dt><dd data-detail="transactionCheck"></dd></div>
+              <div><dt>Order ID</dt><dd data-detail="orderId"></dd></div>
+              <div><dt>Transaction date</dt><dd data-detail="transactionDate"></dd></div>
+              <div><dt>Payment type</dt><dd data-detail="transactionPayment"></dd></div>
+              <div><dt>Total matched</dt><dd data-detail="totalMatched"></dd></div>
+              <div><dt>Kitchen message</dt><dd data-detail="kitchenMessage"></dd></div>
+              <div><dt>Payload captured</dt><dd data-detail="payloadMatched"></dd></div>
+              <div><dt>Artifact</dt><dd data-detail="artifactName"></dd></div>
+            </dl>
+          </section>
         </div>
-        <div id="runs" class="runs" aria-live="polite" aria-busy="true"></div>
+
+        <section class="detail-block detail-block--wide">
+          <h2>Result</h2>
+          <p class="detail-note" data-detail="note"></p>
+          <div class="detail-actions">
+            <a data-link="run" target="_blank" rel="noreferrer">Open run</a>
+            <a data-link="artifacts" target="_blank" rel="noreferrer">Open artifacts</a>
+          </div>
+        </section>
       </section>
     </main>
 
     <template id="runTemplate">
       <article class="run-card">
-        <div class="run-card__summary" role="button" tabindex="0" data-action="toggle" aria-expanded="false">
+        <div class="run-card__summary" role="button" tabindex="0" data-action="open">
           <div class="run-cell run-cell--run">
             <span class="run-number"></span>
             <span class="run-time"></span>
@@ -94,49 +162,6 @@
           </div>
         </div>
 
-        <section class="run-details" hidden>
-          <div class="detail-block detail-block--wide">
-            <h2>Flow checks</h2>
-            <ol class="flow-list" data-detail="flowChecks"></ol>
-          </div>
-
-          <div class="detail-block">
-            <h2>Checkout</h2>
-            <dl class="detail-grid">
-              <div><dt>Revenue center</dt><dd data-detail="revenueCenter"></dd></div>
-              <div><dt>Menu</dt><dd data-detail="menu"></dd></div>
-              <div><dt>Item price</dt><dd data-detail="itemPrice"></dd></div>
-              <div><dt>Subtotal</dt><dd data-detail="subtotal"></dd></div>
-              <div><dt>Tax</dt><dd data-detail="tax"></dd></div>
-              <div><dt>Discount</dt><dd data-detail="discount"></dd></div>
-              <div><dt>Total</dt><dd data-detail="detailTotal"></dd></div>
-              <div><dt>Payment selected</dt><dd data-detail="checkoutPayment"></dd></div>
-            </dl>
-          </div>
-
-          <div class="detail-block">
-            <h2>Transaction</h2>
-            <dl class="detail-grid">
-              <div><dt>Check number</dt><dd data-detail="transactionCheck"></dd></div>
-              <div><dt>Order ID</dt><dd data-detail="orderId"></dd></div>
-              <div><dt>Transaction date</dt><dd data-detail="transactionDate"></dd></div>
-              <div><dt>Payment type</dt><dd data-detail="transactionPayment"></dd></div>
-              <div><dt>Total matched</dt><dd data-detail="totalMatched"></dd></div>
-              <div><dt>Kitchen message</dt><dd data-detail="kitchenMessage"></dd></div>
-              <div><dt>Payload captured</dt><dd data-detail="payloadMatched"></dd></div>
-              <div><dt>Artifact</dt><dd data-detail="artifactName"></dd></div>
-            </dl>
-          </div>
-
-          <div class="detail-block detail-block--wide">
-            <h2>Result</h2>
-            <p class="detail-note" data-detail="note"></p>
-            <div class="detail-actions">
-              <a data-link="run" target="_blank" rel="noreferrer">Open run</a>
-              <a data-link="artifacts" target="_blank" rel="noreferrer">Open artifacts</a>
-            </div>
-          </div>
-        </section>
       </article>
     </template>
 
