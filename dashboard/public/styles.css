@@ -383,6 +383,71 @@ dt,
   margin: 0;
 }
 
+.flow-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-item {
+  display: grid;
+  gap: 5px;
+  min-height: 86px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.flow-item__label {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.flow-item__detail {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.flow-item__status {
+  align-self: end;
+  width: fit-content;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.flow-item--pass {
+  border-color: rgba(6, 118, 71, .24);
+  background: #f3fbf7;
+}
+
+.flow-item--pass .flow-item__status {
+  background: #dcfae6;
+  color: var(--green);
+}
+
+.flow-item--fail {
+  border-color: rgba(180, 35, 24, .25);
+  background: #fff6f5;
+}
+
+.flow-item--fail .flow-item__status {
+  background: #fee4e2;
+  color: var(--red);
+}
+
+.flow-item--unknown .flow-item__status {
+  background: #eef2f6;
+  color: #475467;
+}
+
 dt,
 dd {
   margin: 0;
@@ -461,6 +526,10 @@ dd {
   .detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .flow-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -488,6 +557,7 @@ dd {
   .summary-grid,
   .run-details,
   .detail-grid,
+  .flow-list,
   .run-card__summary {
     grid-template-columns: 1fr;
   }

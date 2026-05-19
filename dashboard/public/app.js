@@ -164,6 +164,7 @@ function renderRuns(errorMessage) {
     setDetail(node, 'payloadMatched', yesNo(summary.submissionPayloadMatched));
     setDetail(node, 'artifactName', run.artifactName);
     setDetail(node, 'note', resultNote(run));
+    renderFlowChecks(node, buildFlowChecks(run));
     node.querySelector('[data-link="run"]').href = run.htmlUrl;
     node.querySelector('[data-link="artifacts"]').href = run.artifactsUrl || run.htmlUrl;
 
@@ -191,6 +192,110 @@ function toggleRun(runId) {
 
 function setDetail(node, name, value) {
   node.querySelector(`[data-detail="${name}"]`).textContent = value || '--';
+}
+
+function renderFlowChecks(node, checks) {
+  const list = node.querySelector('[data-detail="flowChecks"]');
+  list.innerHTML = '';
+
+  checks.forEach((check) => {
+    const item = document.createElement('li');
+    item.className = `flow-item flow-item--${check.state}`;
+
+    const label = document.createElement('span');
+    label.className = 'flow-item__label';
+    label.textContent = check.label;
+
+    const detail = document.createElement('span');
+    detail.className = 'flow-item__detail';
+    detail.textContent = check.detail;
+
+    const status = document.createElement('span');
+    status.className = 'flow-item__status';
+    status.textContent = check.state === 'pass' ? 'Pass' : check.state === 'fail' ? 'Fail' : 'Unknown';
+
+    item.append(label, detail, status);
+    list.append(item);
+  });
+}
+
+function buildFlowChecks(run) {
+  const summary = run.summary || {};
+  const hasSummary = Boolean(run.summary);
+  const runFailed = run.status === 'completed' && run.conclusion === 'failure';
+  const runPassed = run.status === 'completed' && run.conclusion === 'success';
+  const reachedCheckout = hasSummary && typeof summary.total === 'number';
+  const reachedMenu = hasSummary && Boolean(summary.revenueCenterName || summary.menuName || summary.itemName);
+  const orderSubmitted = hasSummary && (summary.checkoutTotalMatchesTransaction !== undefined || summary.transactionKitchenMessageVisible !== undefined);
+  const transactionMatched = summary.checkoutTotalMatchesTransaction === true;
+  const payloadCaptured = summary.submissionPayloadMatched === true;
+
+  const checks = [
+    {
+      label: 'Open site',
+      state: hasSummary || runPassed ? 'pass' : runFailed ? 'unknown' : 'unknown',
+      detail: summary.baseUrl || summary.siteName || 'Started workflow',
+    },
+    {
+      label: 'Resident name and room',
+      state: hasSummary || runPassed ? 'pass' : 'unknown',
+      detail: hasSummary || runPassed ? 'Credentials accepted far enough to continue' : 'No run summary was produced',
+    },
+    {
+      label: 'PIN login',
+      state: reachedMenu || reachedCheckout || runPassed ? 'pass' : runFailed ? 'unknown' : 'unknown',
+      detail: reachedMenu || reachedCheckout || runPassed ? 'Resident reached ordering area' : 'Open the Playwright report to confirm login failure point',
+    },
+    {
+      label: 'Menu discovery',
+      state: reachedMenu ? 'pass' : runFailed ? 'unknown' : 'unknown',
+      detail: reachedMenu ? `${summary.revenueCenterName || 'Revenue center'} / ${summary.menuName || 'Menu'}` : 'No menu selection was recorded',
+    },
+    {
+      label: 'Item added',
+      state: summary.itemName ? 'pass' : runFailed ? 'unknown' : 'unknown',
+      detail: summary.itemName || 'No item was recorded',
+    },
+    {
+      label: 'Checkout math',
+      state: reachedCheckout ? 'pass' : runFailed ? 'unknown' : 'unknown',
+      detail: reachedCheckout ? `Total ${formatMoney(summary.total)}` : 'No checkout total was recorded',
+    },
+    {
+      label: 'Submit payload',
+      state: payloadCaptured ? 'pass' : orderSubmitted || runPassed ? 'unknown' : runFailed ? 'unknown' : 'unknown',
+      detail: payloadCaptured ? 'Payload captured and matched expected totals' : 'Payload was not captured; transaction validation is used instead',
+    },
+    {
+      label: 'Transaction match',
+      state: transactionMatched ? 'pass' : runFailed || summary.checkoutTotalMatchesTransaction === false ? 'fail' : 'unknown',
+      detail: transactionMatched ? 'Checkout matched transaction details' : failureDetail(run),
+    },
+  ];
+
+  if (runFailed && !hasSummary) {
+    checks.unshift({
+      label: 'Failure source',
+      state: 'fail',
+      detail: run.summaryError || 'Workflow failed before order summary was available',
+    });
+  }
+
+  return checks;
+}
+
+function failureDetail(run) {
+  if (run.summaryError) {
+    return run.summaryError;
+  }
+  const summary = run.summary || {};
+  if (summary.checkoutTotalMatchesTransaction === false) {
+    return 'Checkout and transaction totals did not match';
+  }
+  if (run.conclusion === 'failure') {
+    return 'Open report or trace for the failing assertion';
+  }
+  return 'Not confirmed in summary';
 }
 
 function matchesFilter(run) {
