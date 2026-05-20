@@ -14,7 +14,13 @@
 
     <aside class="sidebar" aria-label="Dashboard navigation">
       <div class="sidebar-logo">
-        <span class="logo-icon" aria-hidden="true">Q</span>
+        <span class="logo-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M9 3h6"></path>
+            <path d="M10 3v5l-4.7 8.1A3.2 3.2 0 0 0 8.1 21h7.8a3.2 3.2 0 0 0 2.8-4.9L14 8V3"></path>
+            <path d="M8.4 15h7.2"></path>
+          </svg>
+        </span>
         <div class="logo-text">
           <span class="logo-kicker">Resident Ordering</span>
           <span class="logo-name">QA Monitor</span>
@@ -24,22 +30,48 @@
       <nav class="side-nav">
         <p class="sidebar-section">Overview</p>
         <a class="nav-item is-active" href="#dashboard" data-nav="dashboard">
-          <span class="nav-icon" aria-hidden="true">D</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M4 13.5a8 8 0 1 1 16 0"></path>
+              <path d="M12 13l4-4"></path>
+              <path d="M5 19h14"></path>
+            </svg>
+          </span>
           <span>Dashboard</span>
         </a>
         <a class="nav-item" href="#runs" data-nav="runs">
-          <span class="nav-icon" aria-hidden="true">R</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M9 6h11"></path>
+              <path d="M9 12h11"></path>
+              <path d="M9 18h11"></path>
+              <path d="M4 6h.01"></path>
+              <path d="M4 12h.01"></path>
+              <path d="M4 18h.01"></path>
+            </svg>
+          </span>
           <span>All Runs</span>
           <span class="nav-badge" id="failedBadge" hidden>0</span>
         </a>
 
         <p class="sidebar-section">Insights</p>
         <a class="nav-item" href="#analytics" data-nav="analytics">
-          <span class="nav-icon" aria-hidden="true">A</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M4 19V5"></path>
+              <path d="M4 19h16"></path>
+              <path d="M8 16l3-4 3 2 5-7"></path>
+            </svg>
+          </span>
           <span>Analytics</span>
         </a>
         <a class="nav-item" href="#timeline" data-nav="timeline">
-          <span class="nav-icon" aria-hidden="true">T</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 6v6l4 2"></path>
+              <circle cx="12" cy="12" r="9"></circle>
+            </svg>
+          </span>
           <span>Timeline</span>
         </a>
       </nav>
@@ -73,25 +105,46 @@
         <section class="page is-active" data-page="dashboard" aria-label="Dashboard overview">
           <section class="stats-grid" aria-label="Latest run summary">
             <article class="stat-card stat-card--blue">
-              <span class="stat-icon" aria-hidden="true">P</span>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="m5 12 4 4L19 6"></path>
+                </svg>
+              </span>
               <span class="stat-label">Latest run</span>
               <strong id="latestStatus">Loading</strong>
               <small id="latestMeta">Connecting to GitHub Actions</small>
             </article>
             <article class="stat-card stat-card--green">
-              <span class="stat-icon" aria-hidden="true">%</span>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M19 5 5 19"></path>
+                  <circle cx="7" cy="7" r="2"></circle>
+                  <circle cx="17" cy="17" r="2"></circle>
+                </svg>
+              </span>
               <span class="stat-label">Pass rate</span>
               <strong id="passRate">--</strong>
               <small id="passRateMeta">Last completed runs</small>
             </article>
             <article class="stat-card stat-card--red">
-              <span class="stat-icon" aria-hidden="true">!</span>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 9v4"></path>
+                  <path d="M12 17h.01"></path>
+                  <path d="m10.3 4.3-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-2.7l-8-14a2 2 0 0 0-3.4 0Z"></path>
+                </svg>
+              </span>
               <span class="stat-label">Failed runs</span>
               <strong id="failedCount">--</strong>
               <small id="failedMeta">No failures loaded</small>
             </article>
             <article class="stat-card stat-card--purple">
-              <span class="stat-icon" aria-hidden="true">$</span>
+              <span class="stat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 2v20"></path>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+              </span>
               <span class="stat-label">Order total</span>
               <strong id="latestTotal">--</strong>
               <small id="latestOrderMeta">--</small>
