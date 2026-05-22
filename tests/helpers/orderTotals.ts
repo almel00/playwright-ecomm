@@ -470,11 +470,33 @@ function normalizePaymentType(value: string) {
 }
 
 function expectedTransactionPaymentType(checkout: OrderSummary) {
+  const submittedPaymentType = expectedPaymentTypeFromPayload(checkout.submissionPayloadText);
+  if (submittedPaymentType) {
+    return submittedPaymentType;
+  }
+
   if (roundMoney(checkout.total) > 0) {
     return 'direct billing';
   }
 
   return normalizePaymentType(checkout.checkoutPaymentType || 'meal credit');
+}
+
+function expectedPaymentTypeFromPayload(payload?: string) {
+  const decodedPayload = decodePayload(payload ?? '').toLowerCase();
+  if (!decodedPayload.trim()) {
+    return null;
+  }
+
+  if (/"pid"\s*:\s*"meal_balance"|[?&]pid=meal_balance\b/.test(decodedPayload)) {
+    return 'meal plan';
+  }
+
+  if (/"pid"\s*:\s*"direct_billing"|[?&]pid=direct_billing\b/.test(decodedPayload)) {
+    return 'direct billing';
+  }
+
+  return null;
 }
 
 function detailContainsName(detailText: string, itemName: string) {

@@ -76,7 +76,7 @@ export async function completeOrderingFlow(page: Page, options: OrderFlowOptions
   console.log('[checkout] Placing order');
   const orderSubmissionPayloads = captureMutationPayloads(page);
   const orderSubmissionState = waitForOrderSubmissionState(page);
-  await clickButtonByName(page, /submit order|place order|confirm order|complete order/i);
+  await submitOrder(page);
   await page.waitForTimeout(1_000);
   const submissionPayload = bestSubmissionPayload(orderSubmissionPayloads, summary);
   summary.submissionPayloadText = submissionPayload;
@@ -515,13 +515,17 @@ async function visibleCardNames(page: Page) {
 }
 
 async function clickCardByName(page: Page, name: string) {
+  await dismissOptionalDialog(page);
   const cards = page.locator('.cardAreaMenu, .MuiCardActionArea-root').filter({ hasText: /\S/ });
   const count = await cards.count();
   for (let index = 0; index < count; index += 1) {
     const card = cards.nth(index);
     const text = compact(await card.innerText().catch(() => ''));
     if (text.toLowerCase() === name.toLowerCase() && await isVisible(card, 1_000)) {
+      await card.scrollIntoViewIfNeeded();
       await card.click();
+      await waitForAppReady(page);
+      await dismissOptionalDialog(page);
       return true;
     }
   }
@@ -802,7 +806,7 @@ async function waitForOrderSubmissionState(page: Page) {
   return expect.poll(async () => {
     await waitForAppReady(page);
     const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
-    const submitVisible = await isVisible(page.getByRole('button', { name: /submit order|place order|confirm order|complete order/i }).first(), 500);
+    const submitVisible = await isVisible(actionByName(page, /submit order|place order|confirm order|complete order/i), 500);
     const transactionsVisible = await isVisible(page.getByText(/^my transactions$/i).first(), 500);
     const confirmationVisible = /order.*(sent|submitted|received|placed)|thank you|success/i.test(bodyText);
     return transactionsVisible || confirmationVisible || !submitVisible;
@@ -822,11 +826,102 @@ async function choosePaymentIfNeeded(page: Page) {
   return null;
 }
 
+async function submitOrder(page: Page) {
+  const submitName = /submit order|place order|confirm order|complete order/i;
+  await clickButtonByName(page, submitName);
+  await waitForAppReady(page);
+
+  const confirmationSubmit = confirmationActionByName(page, submitName);
+  if (await isVisible(confirmationSubmit, 2_000)) {
+    await expect(confirmationSubmit).toBeEnabled();
+    await confirmationSubmit.scrollIntoViewIfNeeded();
+    await clickConfirmationSubmit(page, confirmationSubmit);
+    await waitForAppReady(page);
+  }
+}
+
+async function clickConfirmationSubmit(page: Page, submitButton: Locator) {
+  try {
+    await submitButton.click({ timeout: 10_000 });
+    return;
+  } catch (error) {
+    if (await orderSubmissionStartedOrFinished(page)) {
+      console.log('[checkout] Confirmation submit triggered order processing before Playwright completed the click');
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function orderSubmissionStartedOrFinished(page: Page) {
+  const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+  if (/transaction approved|order.*(sent|submitted|received|placed)|thank you|success/.test(bodyText)) {
+    return true;
+  }
+
+  const submissionBackdrop = page
+    .locator('.MuiBackdrop-root, [role="progressbar"], .MuiCircularProgress-root')
+    .filter({ hasText: /./ })
+    .first();
+  const visibleBackdrop = page.locator('.MuiBackdrop-root').first();
+  const visibleProgress = page.locator('[role="progressbar"], .MuiCircularProgress-root').first();
+  return (await isVisible(submissionBackdrop, 500))
+    || (await isVisible(visibleBackdrop, 500))
+    || (await isVisible(visibleProgress, 500));
+}
+
 async function clickButtonByName(page: Page, name: RegExp) {
-  const button = page.getByRole('button', { name }).first();
+  const button = actionByName(page, name);
   await expect(button).toBeVisible();
   await expect(button).toBeEnabled();
+  await button.scrollIntoViewIfNeeded();
   await button.click();
+}
+
+function actionByName(page: Page, name: RegExp) {
+  return actionByNameWithin(page, name);
+}
+
+function confirmationActionByName(page: Page, name: RegExp) {
+  const balanceConfirmation = page
+    .locator('[role="presentation"], [role="dialog"], .MuiDrawer-root, .MuiModal-root, .MuiDialog-root, .swal2-container, .swal2-popup, [class*="modal" i], [class*="dialog" i], [class*="popup" i]')
+    .filter({ hasText: /meal credit available|current balance/i })
+    .filter({ hasText: name })
+    .last();
+  const modal = page
+    .locator('[role="dialog"], .MuiDialog-root, .MuiModal-root, .swal2-container, .swal2-popup')
+    .filter({ hasText: name })
+    .last();
+
+  return strictActionByNameWithin(balanceConfirmation, name)
+    .or(strictActionByNameWithin(modal, name))
+    .or(page.getByRole('button', { name }).last())
+    .or(page.locator('button, [role="button"], a').filter({ hasText: name }).last())
+    .first();
+}
+
+function actionByNameWithin(scope: Page | Locator, name: RegExp) {
+  const namedButton = scope.getByRole('button', { name }).first();
+  const clickableWithText = scope.locator('button, [role="button"], a').filter({ hasText: name }).first();
+  const textClickableAncestor = scope
+    .getByText(name)
+    .locator('xpath=ancestor-or-self::*[self::button or @role="button" or self::a][1]')
+    .first();
+  const visibleText = scope.getByText(name).first();
+
+  return namedButton.or(clickableWithText).or(textClickableAncestor).or(visibleText).first();
+}
+
+function strictActionByNameWithin(scope: Page | Locator, name: RegExp) {
+  const namedButton = scope.getByRole('button', { name }).first();
+  const clickableWithText = scope.locator('button, [role="button"], a').filter({ hasText: name }).first();
+  const textClickableAncestor = scope
+    .getByText(name)
+    .locator('xpath=ancestor-or-self::*[self::button or @role="button" or self::a][1]')
+    .first();
+
+  return namedButton.or(clickableWithText).or(textClickableAncestor).first();
 }
 
 async function navigateByText(page: Page, text: RegExp) {
