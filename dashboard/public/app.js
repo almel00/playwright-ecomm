@@ -3,6 +3,7 @@ const state = {
   filter: 'all',
   query: '',
   page: 'dashboard',
+  isLoading: true,
 };
 
 const elements = {
@@ -98,8 +99,10 @@ window.addEventListener('resize', debounce(renderCharts, 120));
 loadRuns();
 
 async function loadRuns() {
+  state.isLoading = true;
   setBusy(true);
   setStatusMessage('');
+  renderLoadingState();
   try {
     const response = await fetch('/.netlify/functions/github-runs', {
       headers: { accept: 'application/json' },
@@ -114,9 +117,11 @@ async function loadRuns() {
       elements.actionsLink.href = data.actionsUrl;
     }
     state.runs = data.runs || [];
+    state.isLoading = false;
     renderAll();
   } catch (error) {
     state.runs = sampleRuns();
+    state.isLoading = false;
     renderAll();
     setStatusMessage(`${error instanceof Error ? error.message : 'Unable to load GitHub Actions data.'}. Showing sample layout data.`);
   } finally {
@@ -125,6 +130,7 @@ async function loadRuns() {
 }
 
 function renderAll() {
+  clearLoadingState();
   renderSummary();
   renderRunTables();
   renderCharts();
@@ -201,6 +207,12 @@ function renderSummary() {
 }
 
 function renderRunTables() {
+  if (state.isLoading) {
+    renderSkeletonTable(elements.recentRunsBody, 6);
+    renderSkeletonTable(elements.allRunsBody, 8);
+    return;
+  }
+
   const visibleRuns = state.runs.filter(matchesFilter).filter(matchesQuery);
   renderTable(elements.recentRunsBody, visibleRuns.slice(0, 6));
   renderTable(elements.allRunsBody, visibleRuns);
@@ -290,6 +302,10 @@ function openRun(runId) {
 }
 
 function renderCharts() {
+  if (state.isLoading) {
+    return;
+  }
+
   renderResultBars();
   renderDurationBars();
   renderWeeklyPassRate();
@@ -971,8 +987,72 @@ function syncFilterTabs() {
 
 function setBusy(isBusy) {
   elements.recentRunsBody.setAttribute('aria-busy', String(isBusy));
+  elements.allRunsBody.setAttribute('aria-busy', String(isBusy));
   elements.refresh.disabled = isBusy;
   elements.refresh.textContent = isBusy ? 'Refreshing' : 'Refresh';
+}
+
+function renderLoadingState() {
+  setSkeletonText(elements.latestStatus, 'Latest run loading');
+  setSkeletonText(elements.latestMeta, 'Fetching workflow status');
+  setSkeletonText(elements.passRate, 'Pass rate loading');
+  setSkeletonText(elements.passRateMeta, 'Fetching completed runs');
+  setSkeletonText(elements.failedCount, 'Failed runs loading');
+  setSkeletonText(elements.failedMeta, 'Fetching failures');
+  setSkeletonText(elements.latestTotal, 'Order total loading');
+  setSkeletonText(elements.latestOrderMeta, 'Fetching order summary');
+  setSkeletonText(elements.recentCount, 'Loading recent runs');
+  setSkeletonText(elements.allCount, 'Loading run history');
+  setSkeletonText(elements.quickTotal, 'Loading total runs');
+  setSkeletonText(elements.quickAverage, 'Loading average duration');
+  setSkeletonText(elements.quickFastest, 'Loading fastest run');
+  setSkeletonText(elements.quickSlowest, 'Loading slowest run');
+  setSkeletonText(elements.quickSites, 'Loading tested sites');
+
+  document.querySelectorAll('.chart-frame, .donut-card, .split-list, .timeline-list').forEach((element) => {
+    element.classList.add('is-loading');
+    element.setAttribute('aria-busy', 'true');
+  });
+
+  elements.donutValue.textContent = '';
+  elements.donutLegend.innerHTML = '';
+  elements.paymentSplit.innerHTML = '';
+  elements.timelineList.innerHTML = '';
+  renderSkeletonTable(elements.recentRunsBody, 6);
+  renderSkeletonTable(elements.allRunsBody, 8);
+}
+
+function clearLoadingState() {
+  document.querySelectorAll('.skeleton-text').forEach((element) => {
+    element.classList.remove('skeleton-text', 'skeleton-text--short', 'skeleton-text--wide');
+    element.removeAttribute('aria-label');
+  });
+  document.querySelectorAll('.is-loading').forEach((element) => {
+    element.classList.remove('is-loading');
+    element.removeAttribute('aria-busy');
+  });
+}
+
+function setSkeletonText(element, label) {
+  element.textContent = '';
+  element.setAttribute('aria-label', label);
+  element.classList.add('skeleton-text');
+}
+
+function renderSkeletonTable(body, rowCount) {
+  body.innerHTML = '';
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const row = document.createElement('tr');
+    row.className = 'skeleton-row';
+    for (let cellIndex = 0; cellIndex < 8; cellIndex += 1) {
+      const cell = document.createElement('td');
+      const line = document.createElement('span');
+      line.className = `skeleton-line skeleton-line--${cellIndex % 3}`;
+      cell.append(line);
+      row.append(cell);
+    }
+    body.append(row);
+  }
 }
 
 function setStatusMessage(message) {
